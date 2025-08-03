@@ -44,7 +44,7 @@ class ScraperBase(DataSource):
         })
     
     def get_listing(self, url: str) -> Optional[RentalListing]:
-        """Get a rental listing by scraping the URL"""
+        """Get a rental listing by scraping the URL with retry logic"""
         try:
             logger.info(f"Scraping {self.name}: {url}")
             
@@ -61,45 +61,102 @@ class ScraperBase(DataSource):
                     
                     return listing
             
-            # Add random delay to be respectful
-            time.sleep(random.uniform(3, 7))
+            # Try scraping with retry logic
+            return self._scrape_with_retry(url)
             
-            response = self.session.get(url, timeout=30)
-            
-            if response.status_code == 403:
-                logger.error(f"Website blocked the request (403 Forbidden). This is common with web scraping.")
-                logger.info("💡 Try these alternatives:")
-                logger.info("   - Use a different rental site")
-                logger.info("   - Try a different listing URL")
-                logger.info("   - Wait a few minutes and try again")
-                return None
-            elif response.status_code == 404:
-                logger.error(f"Listing not found (404). URL might be invalid.")
-                return None
-            elif response.status_code != 200:
-                logger.error(f"HTTP {response.status_code}: {response.reason}")
-                return None
-            
-            response.raise_for_status()
-            
-            # Cache the successful response
-            if self.cache:
-                self.cache.set(url, response.text, dict(response.headers), response.status_code)
-            
-            soup = BeautifulSoup(response.content, 'html.parser')
-            listing = self._extract_listing_data(soup, url)
-            
-            if listing:
-                logger.info(f"Successfully scraped {self.name} listing: {listing.address}")
-            
-            return listing
-            
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Network error scraping {url}: {str(e)}")
-            return None
         except Exception as e:
-            logger.error(f"Error scraping {url}: {str(e)}")
+            logger.error(f"Unexpected error scraping {url}: {str(e)}")
             return None
+    
+    def _scrape_with_retry(self, url: str) -> Optional[RentalListing]:
+        """Scrape URL with retry logic and exponential backoff"""
+        max_attempts = 5
+        total_timeout = 60  # seconds
+        start_time = time.time()
+        
+        # Different user agents to try
+        user_agents = [
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
+            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Edge/120.0.0.0',
+            'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+            'Mozilla/5.0 (compatible; Bingbot/2.0; +http://www.bing.com/bingbot.htm)'
+        ]
+        
+        for attempt in range(max_attempts):
+            # Check if we've exceeded total timeout
+            elapsed_time = time.time() - start_time
+            if elapsed_time >= total_timeout:
+                logger.error(f"Exceeded total timeout of {total_timeout}s after {attempt} attempts")
+                return None
+            
+            # Rotate user agent for each attempt
+            user_agent = user_agents[attempt % len(user_agents)]
+            self.session.headers.update({'User-Agent': user_agent})
+            
+            try:
+                logger.info(f"Attempt {attempt + 1}/{max_attempts} with User-Agent: {user_agent[:50]}...")
+                
+                # Add random delay to be respectful (longer delay for retries)
+                delay = random.uniform(3, 7) if attempt == 0 else random.uniform(5, 15)
+                time.sleep(delay)
+                
+                response = self.session.get(url, timeout=30)
+                
+                if response.status_code == 200:
+                    # Success! Cache and return the listing
+                    if self.cache:
+                        self.cache.set(url, response.text, dict(response.headers), response.status_code)
+                    
+                    soup = BeautifulSoup(response.content, 'html.parser')
+                    listing = self._extract_listing_data(soup, url)
+                    
+                    if listing:
+                        logger.info(f"Successfully scraped {self.name} listing on attempt {attempt + 1}: {listing.address}")
+                    
+                    return listing
+                
+                elif response.status_code == 403:
+                    logger.warning(f"Attempt {attempt + 1}: Website blocked request (403 Forbidden)")
+                    if attempt == max_attempts - 1:
+                        logger.error("All attempts failed with 403. Website may have anti-scraping measures.")
+                        logger.info("💡 Try these alternatives:")
+                        logger.info("   - Use a different rental site")
+                        logger.info("   - Try a different listing URL")
+                        logger.info("   - Wait a few minutes and try again")
+                
+                elif response.status_code == 404:
+                    logger.error(f"Listing not found (404). URL might be invalid.")
+                    return None  # Don't retry 404s
+                
+                else:
+                    logger.warning(f"Attempt {attempt + 1}: HTTP {response.status_code}: {response.reason}")
+                
+            except requests.exceptions.Timeout:
+                logger.warning(f"Attempt {attempt + 1}: Request timeout")
+            except requests.exceptions.ConnectionError:
+                logger.warning(f"Attempt {attempt + 1}: Connection error")
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"Attempt {attempt + 1}: Network error: {str(e)}")
+            except Exception as e:
+                logger.warning(f"Attempt {attempt + 1}: Unexpected error: {str(e)}")
+            
+            # Calculate backoff delay for next attempt
+            if attempt < max_attempts - 1:
+                backoff_delay = min(2 ** attempt, 10)  # Exponential backoff, max 10 seconds
+                remaining_time = total_timeout - (time.time() - start_time)
+                backoff_delay = min(backoff_delay, remaining_time)
+                
+                if backoff_delay > 0:
+                    logger.info(f"Waiting {backoff_delay:.1f}s before retry...")
+                    time.sleep(backoff_delay)
+        
+                logger.error(f"Failed to scrape {url} after {max_attempts} attempts")
+        return None
     
     def _extract_listing_data(self, soup: BeautifulSoup, url: str) -> Optional[RentalListing]:
         """
