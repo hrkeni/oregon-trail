@@ -104,10 +104,18 @@ class GoogleSheetsManager:
             # Check if listing already exists
             existing_row = self.find_listing_row(listing.url, worksheet)
             
-            # Convert listing to row data
-            row_data = listing.to_sheet_row()
-            
             if existing_row:
+                # Get existing data to preserve notes
+                all_values = worksheet.get_all_values()
+                existing_data = all_values[existing_row - 1]  # Convert to 0-based index
+                
+                # Convert listing to row data
+                row_data = listing.to_sheet_row()
+                
+                # Preserve the existing notes (last column)
+                if len(existing_data) > 15 and existing_data[15]:
+                    row_data[15] = existing_data[15]  # Keep existing notes
+                
                 # Update existing row
                 worksheet.update(f'A{existing_row}:P{existing_row}', [row_data])
                 logger.info(f"Updated listing in row {existing_row}: {listing.address}")
@@ -116,6 +124,7 @@ class GoogleSheetsManager:
                 # Add new row
                 all_values = worksheet.get_all_values()
                 next_row = len(all_values) + 1
+                row_data = listing.to_sheet_row()
                 worksheet.update(f'A{next_row}:P{next_row}', [row_data])
                 logger.info(f"Added listing to row {next_row}: {listing.address}")
                 return True
