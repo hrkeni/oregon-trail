@@ -12,6 +12,7 @@ A simple CLI tool to scrape Zillow rental listings and save them to a Google She
 
 - 🔍 **Multi-site Scraping**: Automatically extract listing details from Zillow, Trulia, Rent.com, Apartments.com, Craigslist, Redfin, and HotPads
 - 🔄 **Smart Updates**: Updates existing listings instead of creating duplicates when re-scraping the same URL
+- 🛡️ **Manual Edit Protection**: Preserves manually modified fields during updates using hash-based detection
 - 📊 **Google Sheets Integration**: Save all listings to a shared spreadsheet
 - 🗑️ **Data Management**: Clear all listings with confirmation prompts
 - 💾 **Smart Caching**: SQLite-based cache to avoid crawling limits and improve performance
@@ -75,13 +76,18 @@ python main.py add --file "urls.txt"
 
 # Add and share with partner
 python main.py add --url "..." --share-with "partner@email.com"
+
+# Force update all fields (ignore manual edits)
+python main.py add --url "..." --reset-hashes
 ```
 
 **Note**: Re-running the same URL will update the existing listing instead of creating a duplicate.
 
+**Manual Edit Protection**: The system automatically detects and preserves fields that you manually edit in Google Sheets. When you re-scrape a listing, only fields that haven't been manually modified will be updated.
+
 **File Format**: Create a text file with one URL per line:
 
-```
+```text
 https://www.zillow.com/homedetails/...
 https://www.trulia.com/home/...
 https://hotpads.com/...
@@ -126,25 +132,37 @@ python main.py cache-clear
 
 # Clear cache entries older than 48 hours
 python main.py cache-clear --max-age-hours 48
+
+### Hash Management
+
+```bash
+# Reset hashes for a specific listing (allows force-updating all fields)
+python main.py reset-hashes --url "https://..."
+
+# Show hash statistics
+python main.py cache-stats
 ```
 
 ## Data Structure
 
 Each listing includes:
 
-- **URL**: Link to the Zillow listing
+- **URL**: Link to the rental listing
 - **Address**: Property address
 - **Price**: Monthly rent
-- **Beds/Baths**: Number of bedrooms and bathrooms
+- **Beds**: Number of bedrooms
+- **Baths**: Number of bathrooms
 - **Sqft**: Square footage
+- **House Type**: Type of property (House, Townhouse, Apartment, etc.)
 - **Description**: Property description
 - **Amenities**: List of available amenities
 - **Available Date**: When the property is available
-- **Pet Policy**: Pet restrictions
 - **Parking**: Parking information
-- **Utilities**: What's included
-- **Notes**: Your personal notes
+- **Utilities**: What's included in rent
+- **Contact Info**: Phone number or contact details
+- **Appointment URL**: Link for scheduling viewings/applications
 - **Scraped At**: When the data was collected
+- **Notes**: Your personal notes (preserved during updates)
 
 ## Legal & Ethical Considerations
 
@@ -177,7 +195,7 @@ The scraper includes a 1-second delay between requests to be respectful to Zillo
 
 ### Project Structure
 
-```
+```text
 oregon-trail/
 ├── src/
 │   ├── __init__.py
@@ -200,6 +218,7 @@ oregon-trail/
 ├── main.py               # Entry point
 ├── requirements.txt      # Dependencies
 └── README.md
+
 ```
 
 ### Adding New Features
