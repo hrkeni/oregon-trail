@@ -1,5 +1,11 @@
 # Oregon Trail - Zillow Rental Listing Summarizer
 
+> **⚠️ PERSONAL USE ONLY**  
+> This tool is designed for personal use only. The author assumes no liability for any other usage of this software. Use at your own risk and in compliance with applicable laws and website terms of service.
+>
+> **🤖 AI-GENERATED CODE**  
+> A large portion of this codebase was written by AI using Cursor. This is a personal development tool and should not be used as a reference for production systems.
+
 A simple CLI tool to scrape Zillow rental listings and save them to a Google Sheet for easy comparison and review.
 
 ## Features
@@ -142,10 +148,12 @@ Each listing includes:
 
 ## Legal & Ethical Considerations
 
-- **Personal Use Only**: This tool is designed for personal use
-- **Rate Limiting**: Built-in delays to be respectful to Zillow's servers
-- **Terms of Service**: Please review Zillow's terms of service
-- **Data Privacy**: Only collect data you need for your search
+- **Personal Use Only**: This tool is designed for personal use only. The author assumes no liability for any other usage of this software.
+- **No Warranty**: This software is provided "as is" without any warranties.
+- **Rate Limiting**: Built-in delays to be respectful to website servers
+- **Terms of Service**: Please review and comply with the terms of service of any websites you scrape
+- **Data Privacy**: Only collect data you need for your personal search
+- **Compliance**: Users are responsible for ensuring their use complies with applicable laws and regulations
 
 ## Troubleshooting
 
@@ -205,3 +213,7 @@ See `src/data_sources/README.md` for detailed instructions on adding new data so
 ## License
 
 This project is released into the public domain. See LICENSE file for details.
+
+**Important**: This software is provided for personal use only. The author assumes no liability for any other usage of this software. Use at your own risk and in compliance with applicable laws and website terms of service.
+
+**AI-Generated Code**: A large portion of this codebase was written by AI using Cursor. This is a personal development tool and should not be used as a reference for production systems.
