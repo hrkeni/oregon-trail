@@ -41,9 +41,16 @@ def add(url: str, sheet_name: str, share_with: Optional[str]):
         click.echo("💡 Try a different rental site or URL")
         return
     
-    # Add to sheet
-    if sheets_manager.add_listing(listing, worksheet):
-        click.echo(f"✅ Added listing: {listing.address}")
+    # Check if listing already exists
+    existing_row = sheets_manager.find_listing_row(listing.url, worksheet)
+    is_update = existing_row is not None
+    
+    # Add or update listing in sheet
+    if sheets_manager.add_or_update_listing(listing, worksheet):
+        if is_update:
+            click.echo(f"✅ Updated listing: {listing.address}")
+        else:
+            click.echo(f"✅ Added listing: {listing.address}")
         
         # Share if requested
         if share_with:

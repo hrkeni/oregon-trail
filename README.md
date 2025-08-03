@@ -4,8 +4,8 @@ A simple CLI tool to scrape Zillow rental listings and save them to a Google She
 
 ## Features
 
-- 🔍 **Web Scraping**: Automatically extract listing details from Zillow URLs
-- 📝 **Manual Input**: Add listings manually when scraping isn't possible
+- 🔍 **Multi-site Scraping**: Automatically extract listing details from Zillow, Trulia, Rent.com, Apartments.com, Craigslist, and Redfin
+- 🔄 **Smart Updates**: Updates existing listings instead of creating duplicates when re-scraping the same URL
 - 📊 **Google Sheets Integration**: Save all listings to a shared spreadsheet
 - 👥 **Collaboration**: Share the sheet with your partner for joint review
 - 📋 **CLI Interface**: Easy-to-use command line interface
@@ -59,15 +59,14 @@ python main.py add --url "https://www.zillow.com/homedetails/..." --share-with "
 ### Add Listings
 
 ```bash
-# Scrape from Zillow URL
-python main.py add --url "https://www.zillow.com/homedetails/..."
-
-# Manual entry
-python main.py add --manual
+# Scrape from any supported site (Zillow, Trulia, Rent.com, etc.)
+python main.py add --url "https://www.trulia.com/home/..."
 
 # Add and share with partner
 python main.py add --url "..." --share-with "partner@email.com"
 ```
+
+**Note**: Re-running the same URL will update the existing listing instead of creating a duplicate.
 
 ### View All Listings
 

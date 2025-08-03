@@ -83,25 +83,50 @@ class GoogleSheetsManager:
             logger.error(f"Failed to setup headers: {str(e)}")
             raise
     
-    def add_listing(self, listing: RentalListing, worksheet: gspread.Worksheet) -> bool:
-        """Add a rental listing to the worksheet"""
+    def find_listing_row(self, url: str, worksheet: gspread.Worksheet) -> Optional[int]:
+        """Find the row number for a listing by URL"""
         try:
-            # Get next empty row
             all_values = worksheet.get_all_values()
-            next_row = len(all_values) + 1
+            
+            for i, row in enumerate(all_values[1:], start=2):  # Skip headers
+                if row[0] == url:  # Match by URL
+                    return i
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Failed to find listing row: {str(e)}")
+            return None
+    
+    def add_or_update_listing(self, listing: RentalListing, worksheet: gspread.Worksheet) -> bool:
+        """Add a rental listing to the worksheet or update if URL already exists"""
+        try:
+            # Check if listing already exists
+            existing_row = self.find_listing_row(listing.url, worksheet)
             
             # Convert listing to row data
             row_data = listing.to_sheet_row()
             
-            # Update the row
-            worksheet.update(f'A{next_row}:N{next_row}', [row_data])
-            
-            logger.info(f"Added listing to row {next_row}: {listing.address}")
-            return True
+            if existing_row:
+                # Update existing row
+                worksheet.update(f'A{existing_row}:N{existing_row}', [row_data])
+                logger.info(f"Updated listing in row {existing_row}: {listing.address}")
+                return True
+            else:
+                # Add new row
+                all_values = worksheet.get_all_values()
+                next_row = len(all_values) + 1
+                worksheet.update(f'A{next_row}:N{next_row}', [row_data])
+                logger.info(f"Added listing to row {next_row}: {listing.address}")
+                return True
             
         except Exception as e:
-            logger.error(f"Failed to add listing: {str(e)}")
+            logger.error(f"Failed to add/update listing: {str(e)}")
             return False
+    
+    def add_listing(self, listing: RentalListing, worksheet: gspread.Worksheet) -> bool:
+        """Add a rental listing to the worksheet (legacy method for backward compatibility)"""
+        return self.add_or_update_listing(listing, worksheet)
     
     def get_all_listings(self, worksheet: gspread.Worksheet) -> List[RentalListing]:
         """Get all listings from the worksheet"""
