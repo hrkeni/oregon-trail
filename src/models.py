@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Optional, List
 from datetime import datetime
+import hashlib
 
 
 @dataclass
@@ -43,6 +44,33 @@ class RentalListing:
             self.scraped_at.isoformat() if self.scraped_at else "",
             self.notes or ""
         ]
+    
+    def to_hash_row(self) -> List[str]:
+        """Convert listing to a hash row for Google Sheets (hidden columns)"""
+        return [
+            self._hash_field(self.url),
+            self._hash_field(self.address),
+            self._hash_field(self.price),
+            self._hash_field(self.beds),
+            self._hash_field(self.baths),
+            self._hash_field(self.sqft),
+            self._hash_field(self.house_type),
+            self._hash_field(self.description),
+            self._hash_field(", ".join(self.amenities or [])),
+            self._hash_field(self.available_date),
+            self._hash_field(self.parking),
+            self._hash_field(self.utilities),
+            self._hash_field(self.contact_info),
+            self._hash_field(self.appointment_url),
+            self._hash_field(self.scraped_at.isoformat() if self.scraped_at else ""),
+            self._hash_field(self.notes)
+        ]
+    
+    def _hash_field(self, value: Optional[str]) -> str:
+        """Generate a hash for a field value"""
+        if value is None:
+            return ""
+        return hashlib.md5(value.encode('utf-8')).hexdigest()[:8]  # 8-char hash
 
     @classmethod
     def get_sheet_headers(cls) -> List[str]:
@@ -64,4 +92,6 @@ class RentalListing:
             "Appointment URL",
             "Scraped At",
             "Notes"
-        ] 
+        ]
+    
+ 

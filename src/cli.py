@@ -20,7 +20,8 @@ def cli():
 @click.option('--file', '-f', help='File containing URLs (one per line)')
 @click.option('--sheet-name', default='Oregon Rental Listings', help='Google Sheet name')
 @click.option('--share-with', help='Email to share the sheet with')
-def add(url: Optional[str], file: Optional[str], sheet_name: str, share_with: Optional[str]):
+@click.option('--reset-hashes', '-r', is_flag=True, help='Reset field hashes to allow overwriting manually modified fields')
+def add(url: Optional[str], file: Optional[str], sheet_name: str, share_with: Optional[str], reset_hashes: bool):
     """Add rental listing(s) to the Google Sheet"""
     
     # Validate input
@@ -46,14 +47,14 @@ def add(url: Optional[str], file: Optional[str], sheet_name: str, share_with: Op
     
     if url:
         # Process single URL
-        _process_single_url(url, scraper, sheets_manager, worksheet, share_with, sheet_name)
+        _process_single_url(url, scraper, sheets_manager, worksheet, share_with, sheet_name, reset_hashes)
     else:
         # Process file with multiple URLs
-        _process_url_file(file, scraper, sheets_manager, worksheet, share_with, sheet_name)
+        _process_url_file(file, scraper, sheets_manager, worksheet, share_with, sheet_name, reset_hashes)
 
 
 def _process_single_url(url: str, scraper: RentalScraper, sheets_manager: GoogleSheetsManager, 
-                        worksheet, share_with: Optional[str], sheet_name: str):
+                        worksheet, share_with: Optional[str], sheet_name: str, reset_hashes: bool):
     """Process a single URL"""
     click.echo(f"🔍 Scraping listing from: {url}")
     listing = scraper.scrape_listing(url)
@@ -68,7 +69,7 @@ def _process_single_url(url: str, scraper: RentalScraper, sheets_manager: Google
     is_update = existing_row is not None
     
     # Add or update listing in sheet
-    if sheets_manager.add_or_update_listing(listing, worksheet):
+    if sheets_manager.add_or_update_listing(listing, worksheet, reset_hashes=reset_hashes):
         if is_update:
             click.echo(f"✅ Updated listing: {listing.address}")
         else:
@@ -85,7 +86,7 @@ def _process_single_url(url: str, scraper: RentalScraper, sheets_manager: Google
 
 
 def _process_url_file(file_path: str, scraper: RentalScraper, sheets_manager: GoogleSheetsManager, 
-                     worksheet, share_with: Optional[str], sheet_name: str):
+                     worksheet, share_with: Optional[str], sheet_name: str, reset_hashes: bool):
     """Process a file containing URLs"""
     try:
         file_path = Path(file_path)
@@ -121,7 +122,7 @@ def _process_url_file(file_path: str, scraper: RentalScraper, sheets_manager: Go
             is_update = existing_row is not None
             
             # Add or update listing in sheet
-            if sheets_manager.add_or_update_listing(listing, worksheet):
+            if sheets_manager.add_or_update_listing(listing, worksheet, reset_hashes=reset_hashes):
                 if is_update:
                     click.echo(f"   ✅ Updated: {listing.address}")
                 else:
@@ -313,6 +314,24 @@ def clear(sheet_name: str, force: bool):
 
 
 @cli.command()
+@click.option('--url', '-u', required=True, help='URL of the listing to reset hashes for')
+@click.option('--sheet-name', default='Oregon Rental Listings', help='Google Sheet name')
+def reset_hashes(url: str, sheet_name: str):
+    """Reset field hashes for a specific listing to allow overwriting manually modified fields"""
+    try:
+        sheets_manager = GoogleSheetsManager()
+        worksheet = sheets_manager.create_or_get_sheet(sheet_name)
+        
+        # Clear hashes for the URL
+        sheets_manager.cache.clear_field_hashes(url)
+        click.echo(f"✅ Reset hashes for URL: {url}")
+        click.echo("💡 Next time you scrape this URL, all fields will be updated with fresh data")
+        
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}")
+
+
+@cli.command()
 @click.option('--max-age-hours', default=168, help='Maximum age of cache entries in hours (default: 168 = 7 days)')
 def cache_clear(max_age_hours: int):
     """Clear expired cache entries"""
@@ -335,10 +354,10 @@ def cache_stats():
         
         if stats:
             click.echo("📊 Cache Statistics:")
-            click.echo(f"   Total entries: {stats.get('total_entries', 0)}")
-            click.echo(f"   Total size: {stats.get('total_size_mb', 0)} MB")
-            click.echo(f"   Oldest entry: {stats.get('oldest_entry', 'N/A')}")
-            click.echo(f"   Newest entry: {stats.get('newest_entry', 'N/A')}")
+            click.echo(f"   Web pages cached: {stats.get('total_pages', 0)}")
+            click.echo(f"   Recent pages (24h): {stats.get('recent_pages', 0)}")
+            click.echo(f"   Field hashes stored: {stats.get('total_hashes', 0)}")
+            click.echo(f"   URLs with hashes: {stats.get('urls_with_hashes', 0)}")
         else:
             click.echo("📊 No cache statistics available")
     except Exception as e:
