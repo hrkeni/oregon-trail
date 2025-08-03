@@ -168,6 +168,39 @@ def clear(sheet_name: str, force: bool):
 
 
 @cli.command()
+@click.option('--max-age-hours', default=168, help='Maximum age of cache entries in hours (default: 168 = 7 days)')
+def cache_clear(max_age_hours: int):
+    """Clear expired cache entries"""
+    try:
+        from .cache import WebPageCache
+        cache = WebPageCache()
+        cache.clear(max_age_hours=max_age_hours)
+        click.echo(f"✅ Cleared cache entries older than {max_age_hours} hours")
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}")
+
+
+@cli.command()
+def cache_stats():
+    """Show cache statistics"""
+    try:
+        from .cache import WebPageCache
+        cache = WebPageCache()
+        stats = cache.get_stats()
+        
+        if stats:
+            click.echo("📊 Cache Statistics:")
+            click.echo(f"   Total entries: {stats.get('total_entries', 0)}")
+            click.echo(f"   Total size: {stats.get('total_size_mb', 0)} MB")
+            click.echo(f"   Oldest entry: {stats.get('oldest_entry', 'N/A')}")
+            click.echo(f"   Newest entry: {stats.get('newest_entry', 'N/A')}")
+        else:
+            click.echo("📊 No cache statistics available")
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}")
+
+
+@cli.command()
 def setup():
     """Setup instructions for Google Sheets API"""
     click.echo("🔧 Google Sheets API Setup Instructions:")

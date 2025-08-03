@@ -8,6 +8,7 @@ A simple CLI tool to scrape Zillow rental listings and save them to a Google She
 - 🔄 **Smart Updates**: Updates existing listings instead of creating duplicates when re-scraping the same URL
 - 📊 **Google Sheets Integration**: Save all listings to a shared spreadsheet
 - 🗑️ **Data Management**: Clear all listings with confirmation prompts
+- 💾 **Smart Caching**: SQLite-based cache to avoid crawling limits and improve performance
 - 👥 **Collaboration**: Share the sheet with your partner for joint review
 - 📋 **CLI Interface**: Easy-to-use command line interface
 - 🔒 **Type Safety**: Full type hints for reliable code
@@ -95,6 +96,19 @@ python main.py clear
 
 # Clear without confirmation (force)
 python main.py clear --force
+```
+
+### Cache Management
+
+```bash
+# Show cache statistics
+python main.py cache-stats
+
+# Clear expired cache entries (default: 7 days)
+python main.py cache-clear
+
+# Clear cache entries older than 48 hours
+python main.py cache-clear --max-age-hours 48
 ```
 
 ## Data Structure

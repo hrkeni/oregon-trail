@@ -41,6 +41,7 @@ Thumbs.db
 credentials.json
 *.log
 .env
+cache.db
 
 # Google Sheets credentials
 credentials.json

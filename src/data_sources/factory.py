@@ -8,6 +8,7 @@ from .rent_com import RentComDataSource
 from .apartments_com import ApartmentsComDataSource
 from .craigslist import CraigslistDataSource
 from .redfin import RedfinDataSource
+from ..cache import WebPageCache
 
 logger = logging.getLogger(__name__)
 
@@ -15,14 +16,15 @@ logger = logging.getLogger(__name__)
 class DataSourceFactory:
     """Factory for creating and managing rental listing data sources"""
     
-    def __init__(self):
+    def __init__(self, cache: Optional[WebPageCache] = None):
+        self.cache = cache
         self._data_sources: List[DataSource] = [
-            TruliaDataSource(),
-            ZillowDataSource(),
-            RentComDataSource(),
-            ApartmentsComDataSource(),
-            CraigslistDataSource(),
-            RedfinDataSource(),
+            TruliaDataSource(cache=cache),
+            ZillowDataSource(cache=cache),
+            RentComDataSource(cache=cache),
+            ApartmentsComDataSource(cache=cache),
+            CraigslistDataSource(cache=cache),
+            RedfinDataSource(cache=cache),
         ]
     
     def get_data_source(self, url: str) -> Optional[DataSource]:

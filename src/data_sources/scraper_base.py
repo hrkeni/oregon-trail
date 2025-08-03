@@ -8,6 +8,7 @@ from datetime import datetime
 
 from .base import DataSource
 from ..models import RentalListing
+from ..cache import WebPageCache
 
 logger = logging.getLogger(__name__)
 
@@ -15,8 +16,9 @@ logger = logging.getLogger(__name__)
 class ScraperBase(DataSource):
     """Base class for web scraping data sources"""
     
-    def __init__(self):
+    def __init__(self, cache: Optional[WebPageCache] = None):
         self.session = requests.Session()
+        self.cache = cache
         
         # Rotate user agents to avoid detection
         user_agents = [
@@ -46,6 +48,19 @@ class ScraperBase(DataSource):
         try:
             logger.info(f"Scraping {self.name}: {url}")
             
+            # Check cache first
+            if self.cache:
+                cached_data = self.cache.get(url)
+                if cached_data:
+                    logger.info(f"Using cached data for {url}")
+                    soup = BeautifulSoup(cached_data['content'], 'html.parser')
+                    listing = self._extract_listing_data(soup, url)
+                    
+                    if listing:
+                        logger.info(f"Successfully extracted {self.name} listing from cache: {listing.address}")
+                    
+                    return listing
+            
             # Add random delay to be respectful
             time.sleep(random.uniform(3, 7))
             
@@ -66,6 +81,10 @@ class ScraperBase(DataSource):
                 return None
             
             response.raise_for_status()
+            
+            # Cache the successful response
+            if self.cache:
+                self.cache.set(url, response.text, dict(response.headers), response.status_code)
             
             soup = BeautifulSoup(response.content, 'html.parser')
             listing = self._extract_listing_data(soup, url)
