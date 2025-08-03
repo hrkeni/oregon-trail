@@ -1,0 +1,150 @@
+import click
+import os
+from typing import Optional
+from datetime import datetime
+
+from .models import RentalListing
+from .scraper import RentalScraper
+from .sheets import GoogleSheetsManager
+
+
+@click.group()
+def cli():
+    """Oregon Trail - Rental Listing Summarizer"""
+    pass
+
+
+@cli.command()
+@click.option('--url', '-u', required=True, help='Rental listing URL to scrape')
+@click.option('--sheet-name', default='Oregon Rental Listings', help='Google Sheet name')
+@click.option('--share-with', help='Email to share the sheet with')
+def add(url: str, sheet_name: str, share_with: Optional[str]):
+    """Add a rental listing to the Google Sheet"""
+    
+    # Initialize components
+    try:
+        sheets_manager = GoogleSheetsManager()
+        worksheet = sheets_manager.create_or_get_sheet(sheet_name)
+        sheets_manager.setup_headers(worksheet)
+    except Exception as e:
+        click.echo(f"❌ Failed to initialize Google Sheets: {str(e)}")
+        click.echo("Make sure you have credentials.json in the project root")
+        return
+    
+    # Scrape from URL
+    click.echo(f"🔍 Scraping listing from: {url}")
+    scraper = RentalScraper()
+    listing = scraper.scrape_listing(url)
+    
+    if not listing:
+        click.echo("❌ Failed to scrape listing. The URL might be invalid or the site blocked the request.")
+        click.echo("💡 Try a different rental site or URL")
+        return
+    
+    # Add to sheet
+    if sheets_manager.add_listing(listing, worksheet):
+        click.echo(f"✅ Added listing: {listing.address}")
+        
+        # Share if requested
+        if share_with:
+            if sheets_manager.share_sheet(share_with, sheet_name):
+                click.echo(f"📧 Shared sheet with: {share_with}")
+            else:
+                click.echo(f"❌ Failed to share sheet with: {share_with}")
+    else:
+        click.echo("❌ Failed to add listing to sheet")
+
+
+@cli.command()
+@click.option('--sheet-name', default='Oregon Rental Listings', help='Google Sheet name')
+def list(sheet_name: str):
+    """List all rental listings in the sheet"""
+    
+    try:
+        sheets_manager = GoogleSheetsManager()
+        worksheet = sheets_manager.create_or_get_sheet(sheet_name)
+        listings = sheets_manager.get_all_listings(worksheet)
+        
+        if not listings:
+            click.echo("📋 No listings found in the sheet")
+            return
+        
+        click.echo(f"📋 Found {len(listings)} listings:")
+        click.echo("-" * 80)
+        
+        for i, listing in enumerate(listings, 1):
+            click.echo(f"{i}. {listing.address}")
+            click.echo(f"   Price: {listing.price or 'N/A'}")
+            click.echo(f"   Beds/Baths: {listing.beds or 'N/A'}/{listing.baths or 'N/A'}")
+            click.echo(f"   URL: {listing.url}")
+            if listing.notes:
+                click.echo(f"   Notes: {listing.notes}")
+            click.echo()
+    
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}")
+
+
+@cli.command()
+@click.option('--url', '-u', required=True, help='URL of the listing to update')
+@click.option('--notes', '-n', required=True, help='New notes for the listing')
+@click.option('--sheet-name', default='Oregon Rental Listings', help='Google Sheet name')
+def update_notes(url: str, notes: str, sheet_name: str):
+    """Update notes for a specific listing"""
+    
+    try:
+        sheets_manager = GoogleSheetsManager()
+        worksheet = sheets_manager.create_or_get_sheet(sheet_name)
+        
+        if sheets_manager.update_listing_notes(url, notes, worksheet):
+            click.echo(f"✅ Updated notes for listing: {url}")
+        else:
+            click.echo(f"❌ Listing not found: {url}")
+    
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}")
+
+
+@cli.command()
+@click.option('--email', '-e', required=True, help='Email to share the sheet with')
+@click.option('--sheet-name', default='Oregon Rental Listings', help='Google Sheet name')
+def share(email: str, sheet_name: str):
+    """Share the Google Sheet with someone"""
+    
+    try:
+        sheets_manager = GoogleSheetsManager()
+        
+        if sheets_manager.share_sheet(email, sheet_name):
+            click.echo(f"✅ Shared sheet with: {email}")
+        else:
+            click.echo(f"❌ Failed to share sheet with: {email}")
+    
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}")
+
+
+@cli.command()
+def setup():
+    """Setup instructions for Google Sheets API"""
+    click.echo("🔧 Google Sheets API Setup Instructions:")
+    click.echo()
+    click.echo("1. Go to Google Cloud Console: https://console.cloud.google.com/")
+    click.echo("2. Create a new project or select existing one")
+    click.echo("3. Enable Google Sheets API and Google Drive API")
+    click.echo("4. Create a Service Account:")
+    click.echo("   - Go to 'IAM & Admin' > 'Service Accounts'")
+    click.echo("   - Click 'Create Service Account'")
+    click.echo("   - Give it a name like 'oregon-trail-sheets'")
+    click.echo("5. Create and download JSON key:")
+    click.echo("   - Click on the service account")
+    click.echo("   - Go to 'Keys' tab")
+    click.echo("   - Click 'Add Key' > 'Create new key' > 'JSON'")
+    click.echo("   - Download the JSON file")
+    click.echo("6. Rename the downloaded file to 'credentials.json'")
+    click.echo("7. Place 'credentials.json' in the project root directory")
+    click.echo()
+    click.echo("✅ You're ready to use the app!")
+
+
+if __name__ == '__main__':
+    cli() 
