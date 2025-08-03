@@ -79,6 +79,15 @@ python main.py add --url "..." --share-with "partner@email.com"
 
 # Force update all fields (ignore manual edits)
 python main.py add --url "..." --reset-hashes
+
+# Rescrape all URLs from the sheet (preserve manual edits)
+python main.py rescrape
+
+# Rescrape all URLs from the sheet (ignore manual edits)
+python main.py rescrape --ignore-hashes
+
+# Rescrape without confirmation prompts
+python main.py rescrape --force
 ```
 
 **Note**: Re-running the same URL will update the existing listing instead of creating a duplicate.
@@ -141,6 +150,12 @@ python main.py reset-hashes --url "https://..."
 
 # Show hash statistics
 python main.py cache-stats
+
+# Rescrape all URLs from the sheet (preserve manual edits)
+python main.py rescrape
+
+# Rescrape all URLs from the sheet (ignore manual edits)
+python main.py rescrape --ignore-hashes
 ```
 
 ## Data Structure

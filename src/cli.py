@@ -332,6 +332,46 @@ def reset_hashes(url: str, sheet_name: str):
 
 
 @cli.command()
+@click.option('--sheet-name', default='Oregon Rental Listings', help='Google Sheet name')
+@click.option('--ignore-hashes', '-i', is_flag=True, help='Ignore hashing rules and update all fields')
+@click.option('--force', '-f', is_flag=True, help='Skip confirmation prompt')
+def rescrape(sheet_name: str, ignore_hashes: bool, force: bool):
+    """Rescrape all URLs from the sheet"""
+    try:
+        sheets_manager = GoogleSheetsManager()
+        worksheet = sheets_manager.create_or_get_sheet(sheet_name)
+        scraper = RentalScraper()
+        
+        # Get all listings from the sheet
+        listings = sheets_manager.get_all_listings(worksheet)
+        
+        if not listings:
+            click.echo("📋 No listings found in the sheet")
+            return
+        
+        click.echo(f"📋 Found {len(listings)} listings to rescrape")
+        
+        if not force:
+            if ignore_hashes:
+                click.echo("⚠️  This will update ALL fields, ignoring manual edits")
+            else:
+                click.echo("⚠️  This will update fields while preserving manual edits")
+            
+            if not click.confirm("Are you sure you want to continue?"):
+                click.echo("❌ Operation cancelled")
+                return
+        
+        # Use the sheets manager to handle the rescraping logic
+        results = sheets_manager.rescrape_all_listings(worksheet, scraper, ignore_hashes)
+        
+        click.echo("-" * 50)
+        click.echo(f"📊 Summary: {results['successful']} successful, {results['failed']} failed")
+        
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}")
+
+
+@cli.command()
 @click.option('--max-age-hours', default=168, help='Maximum age of cache entries in hours (default: 168 = 7 days)')
 def cache_clear(max_age_hours: int):
     """Clear expired cache entries"""

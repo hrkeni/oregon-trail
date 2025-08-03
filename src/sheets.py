@@ -301,4 +301,44 @@ class GoogleSheetsManager:
             
         except Exception as e:
             logger.error(f"Failed to clear listings: {str(e)}")
-            return False 
+            return False
+    
+    def rescrape_all_listings(self, worksheet: gspread.Worksheet, scraper, ignore_hashes: bool = False) -> dict:
+        """Rescrape all listings from the sheet and return results summary"""
+        try:
+            # Get all listings from the sheet
+            listings = self.get_all_listings(worksheet)
+            
+            if not listings:
+                return {"successful": 0, "failed": 0, "total": 0}
+            
+            successful = 0
+            failed = 0
+            
+            for listing in listings:
+                # Rescrape the listing
+                new_listing = scraper.scrape_listing(listing.url)
+                
+                if not new_listing:
+                    failed += 1
+                    continue
+                
+                # Update the listing with appropriate hash handling
+                if ignore_hashes:
+                    # Clear hashes to force update all fields
+                    self.cache.clear_field_hashes(listing.url)
+                    reset_hashes = True
+                else:
+                    # Honor existing hashing rules
+                    reset_hashes = False
+                
+                if self.add_or_update_listing(new_listing, worksheet, reset_hashes=reset_hashes):
+                    successful += 1
+                else:
+                    failed += 1
+            
+            return {"successful": successful, "failed": failed, "total": len(listings)}
+            
+        except Exception as e:
+            logger.error(f"Failed to rescrape listings: {str(e)}")
+            return {"successful": 0, "failed": 0, "total": 0} 
