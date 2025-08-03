@@ -1,8 +1,11 @@
 import re
+import logging
 from typing import Optional
 from bs4 import BeautifulSoup
 
 from .scraper_base import ScraperBase
+
+logger = logging.getLogger(__name__)
 
 
 class ZillowDataSource(ScraperBase):
@@ -61,7 +64,26 @@ class ZillowDataSource(ScraperBase):
     
     def _extract_beds_baths(self, soup: BeautifulSoup) -> tuple[Optional[str], Optional[str]]:
         """Extract bedroom and bathroom counts from Zillow"""
-        # First try specific selectors
+        beds = None
+        baths = None
+        
+        # First try meta tags - these are most reliable
+        meta_beds = soup.find('meta', {'property': 'zillow_fb:beds'})
+        if meta_beds and meta_beds.get('content'):
+            beds = meta_beds.get('content')
+            logger.debug(f"Found beds from meta tag: {beds}")
+        
+        meta_baths = soup.find('meta', {'property': 'zillow_fb:baths'})
+        if meta_baths and meta_baths.get('content'):
+            baths = meta_baths.get('content')
+            logger.debug(f"Found baths from meta tag: {baths}")
+        
+        # If we found both from meta tags, return them
+        if beds and baths:
+            logger.debug(f"Using meta tag values: {beds}/{baths}")
+            return beds, baths
+        
+        # Fallback to specific selectors
         bed_bath_selectors = [
             '[data-testid="bed-bath-brief"]',
             '.bed-bath-brief',
@@ -72,18 +94,17 @@ class ZillowDataSource(ScraperBase):
             '.bed-bath-info'
         ]
         
-        beds = None
-        baths = None
-        
         for selector in bed_bath_selectors:
             element = soup.select_one(selector)
             if element:
                 text = element.get_text()
-                bed_match = re.search(r'(\d+)\s*(?:bed|br)', text, re.IGNORECASE)
+                # Look for patterns like "4beds" (no space) or "4 beds" (with space)
+                bed_match = re.search(r'(\d+)\s*(?:beds?|bedrooms?|br)\b', text, re.IGNORECASE)
                 if bed_match:
                     beds = bed_match.group(1)
                 
-                bath_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:bath|ba)', text, re.IGNORECASE)
+                # Look for patterns like "2.5baths" (no space) or "2.5 baths" (with space)
+                bath_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:baths?|bathrooms?|ba)\b', text, re.IGNORECASE)
                 if bath_match:
                     baths = bath_match.group(1)
                 
@@ -93,15 +114,57 @@ class ZillowDataSource(ScraperBase):
         # If not found, search the entire page text
         if not beds or not baths:
             text = soup.get_text()
-            # Look for patterns like "3beds" or "3 beds" or "3 bedrooms"
-            bed_match = re.search(r'(\d+)\s*(?:beds?|bedrooms?)\b', text, re.IGNORECASE)
+            
+            # Look for patterns like "4 beds" or "4beds" in the main content
+            # Be more specific to avoid false matches from navigation/footer
+            bed_patterns = [
+                r'(\d+)\s*(?:beds?|bedrooms?)\b',  # "4 beds" or "4bed"
+                r'\b(\d+)\s*(?:bedroom|bed)',      # "4 bedroom" or "4 bed"
+            ]
+            
+            for pattern in bed_patterns:
+                bed_match = re.search(pattern, text, re.IGNORECASE)
+                if bed_match:
+                    beds = bed_match.group(1)
+                    break
+            
+            # Look for patterns like "3 baths" or "3baths" in the main content
+            # Be more specific to avoid false matches from navigation/footer
+            bath_patterns = [
+                r'(\d+(?:\.\d+)?)\s*(?:baths?|bathrooms?)\b',  # "3 baths" or "3bath" or "2.5 baths"
+                r'\b(\d+(?:\.\d+)?)\s*(?:bathroom|bath)',      # "3 bathroom" or "3 bath"
+            ]
+            
+            for pattern in bath_patterns:
+                bath_match = re.search(pattern, text, re.IGNORECASE)
+                if bath_match:
+                    baths = bath_match.group(1)
+                    break
+        
+        # Additional fallback: look for the specific format from the page
+        if not beds or not baths:
+            # Look for the exact format "4beds" and "3baths" (no spaces)
+            bed_match = re.search(r'(\d+)beds?\b', text, re.IGNORECASE)
             if bed_match:
                 beds = bed_match.group(1)
             
-            # Look for patterns like "3baths" or "3 baths" or "3 bathrooms"
-            bath_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:baths?|bathrooms?)\b', text, re.IGNORECASE)
+            bath_match = re.search(r'(\d+(?:\.\d+)?)baths?\b', text, re.IGNORECASE)
             if bath_match:
                 baths = bath_match.group(1)
+        
+        # Final fallback: look for the description format "4 beds, 3 baths"
+        if not beds or not baths:
+            desc_match = re.search(r'(\d+)\s*beds?[,\s]+(\d+(?:\.\d+)?)\s*baths?', text, re.IGNORECASE)
+            if desc_match:
+                beds = desc_match.group(1)
+                baths = desc_match.group(2)
+                logger.debug(f"Found beds/baths from description pattern: {beds}/{baths}")
+        
+        # Debug: log what we found
+        if beds or baths:
+            logger.debug(f"Final beds/baths extraction: {beds}/{baths}")
+        else:
+            logger.debug("No beds/baths found in text")
         
         return beds, baths
     
