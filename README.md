@@ -139,9 +139,21 @@ oregon-trail/
 ├── src/
 │   ├── __init__.py
 │   ├── models.py          # Data models
-│   ├── scraper.py         # Zillow scraping logic
+│   ├── scraper.py         # Main scraper using data sources
 │   ├── sheets.py          # Google Sheets integration
-│   └── cli.py            # Command line interface
+│   ├── cli.py            # Command line interface
+│   └── data_sources/     # Modular data source architecture
+│       ├── base.py           # Abstract base class
+│       ├── scraper_base.py   # Base class for scrapers
+│       ├── api_base.py       # Base class for APIs
+│       ├── factory.py        # Data source factory
+│       ├── trulia.py         # Trulia scraper
+│       ├── zillow.py         # Zillow scraper
+│       ├── rent_com.py       # Rent.com scraper
+│       ├── apartments_com.py # Apartments.com scraper
+│       ├── craigslist.py     # Craigslist scraper
+│       ├── redfin.py         # Redfin scraper
+│       └── example_api.py    # Example API source
 ├── main.py               # Entry point
 ├── requirements.txt      # Dependencies
 └── README.md
@@ -150,8 +162,10 @@ oregon-trail/
 ### Adding New Features
 
 1. **New Data Fields**: Update `RentalListing` in `models.py`
-2. **New Scraping Logic**: Extend `ZillowScraper` in `scraper.py`
+2. **New Data Sources**: Add new scrapers or APIs in `src/data_sources/`
 3. **New CLI Commands**: Add to `cli.py`
+
+See `src/data_sources/README.md` for detailed instructions on adding new data sources.
 
 ## License
 
