@@ -147,7 +147,8 @@ def _process_url_file(file_path: str, scraper: RentalScraper, sheets_manager: Go
 
 @cli.command()
 @click.option('--sheet-name', default='Oregon Rental Listings', help='Google Sheet name')
-def list(sheet_name: str):
+@click.option('--detailed', '-d', is_flag=True, help='Show detailed view with descriptions and amenities')
+def list(sheet_name: str, detailed: bool):
     """List all rental listings in the sheet"""
     
     try:
@@ -160,17 +161,77 @@ def list(sheet_name: str):
             return
         
         click.echo(f"📋 Found {len(listings)} listings:")
-        click.echo("-" * 80)
+        click.echo("=" * 120)
         
+        # Create table headers
+        headers = [
+            "#", "Address", "Price", "Beds", "Baths", "Sqft", "Type", 
+            "Contact", "Appointment", "Available", "Parking", "Utilities"
+        ]
+        
+        # Calculate column widths
+        col_widths = [3, 35, 10, 5, 5, 8, 10, 15, 25, 12, 10, 10]
+        
+        # Print header
+        header_row = " | ".join(f"{h:<{w}}" for h, w in zip(headers, col_widths))
+        click.echo(header_row)
+        click.echo("-" * len(header_row))
+        
+        # Print data rows
         for i, listing in enumerate(listings, 1):
-            click.echo(f"{i}. {listing.address}")
-            click.echo(f"   Price: {listing.price or 'N/A'}")
-            click.echo(f"   Beds/Baths: {listing.beds or 'N/A'}/{listing.baths or 'N/A'}")
-            click.echo(f"   House Type: {listing.house_type or 'N/A'}")
-            click.echo(f"   URL: {listing.url}")
-            if listing.notes:
-                click.echo(f"   Notes: {listing.notes}")
-            click.echo()
+            # Truncate long fields
+            address = (listing.address[:32] + "...") if len(listing.address) > 35 else listing.address
+            contact = (listing.contact_info[:12] + "...") if listing.contact_info and len(listing.contact_info) > 15 else (listing.contact_info or "")
+            appointment = (listing.appointment_url[:22] + "...") if listing.appointment_url and len(listing.appointment_url) > 25 else (listing.appointment_url or "")
+            
+            row = [
+                str(i),
+                address,
+                listing.price or "",
+                listing.beds or "",
+                listing.baths or "",
+                listing.sqft or "",
+                listing.house_type or "",
+                contact,
+                appointment,
+                listing.available_date or "",
+                listing.parking or "",
+                listing.utilities or ""
+            ]
+            
+            # Format row with proper column widths
+            formatted_row = " | ".join(f"{cell:<{w}}" for cell, w in zip(row, col_widths))
+            click.echo(formatted_row)
+        
+        click.echo("=" * len(header_row))
+        
+        if detailed:
+            click.echo("\n📋 DETAILED VIEW:")
+            click.echo("=" * 80)
+            
+            for i, listing in enumerate(listings, 1):
+                click.echo(f"{i}. {listing.address}")
+                click.echo(f"   Price: {listing.price or 'N/A'}")
+                click.echo(f"   Beds/Baths: {listing.beds or 'N/A'}/{listing.baths or 'N/A'}")
+                click.echo(f"   Sqft: {listing.sqft or 'N/A'}")
+                click.echo(f"   House Type: {listing.house_type or 'N/A'}")
+                click.echo(f"   Available: {listing.available_date or 'N/A'}")
+                click.echo(f"   Parking: {listing.parking or 'N/A'}")
+                click.echo(f"   Utilities: {listing.utilities or 'N/A'}")
+                if listing.contact_info:
+                    click.echo(f"   Contact: {listing.contact_info}")
+                if listing.appointment_url:
+                    click.echo(f"   Appointment: {listing.appointment_url}")
+                if listing.description:
+                    click.echo(f"   Description: {listing.description[:200]}{'...' if len(listing.description) > 200 else ''}")
+                if listing.amenities:
+                    click.echo(f"   Amenities: {', '.join(listing.amenities)}")
+                click.echo(f"   URL: {listing.url}")
+                if listing.notes:
+                    click.echo(f"   Notes: {listing.notes}")
+                click.echo()
+        else:
+            click.echo(f"💡 Use 'python main.py list --detailed' for full details including descriptions and amenities")
     
     except Exception as e:
         click.echo(f"❌ Error: {str(e)}")

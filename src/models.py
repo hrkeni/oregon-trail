@@ -18,6 +18,8 @@ class RentalListing:
     available_date: Optional[str] = None
     parking: Optional[str] = None
     utilities: Optional[str] = None
+    contact_info: Optional[str] = None
+    appointment_url: Optional[str] = None
     scraped_at: Optional[datetime] = None
     notes: Optional[str] = None
 
@@ -36,6 +38,8 @@ class RentalListing:
             self.available_date or "",
             self.parking or "",
             self.utilities or "",
+            self.contact_info or "",
+            self.appointment_url or "",
             self.scraped_at.isoformat() if self.scraped_at else "",
             self.notes or ""
         ]
@@ -56,6 +60,8 @@ class RentalListing:
             "Available Date",
             "Parking",
             "Utilities",
+            "Contact Info",
+            "Appointment URL",
             "Scraped At",
             "Notes"
         ] 

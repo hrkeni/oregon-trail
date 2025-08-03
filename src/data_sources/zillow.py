@@ -356,3 +356,107 @@ class ZillowDataSource(ScraperBase):
             return "Available Now"
         
         return None
+    
+    def _extract_contact_info(self, soup: BeautifulSoup) -> Optional[str]:
+        """Extract contact information from Zillow"""
+        # Look for phone numbers in the page
+        text = soup.get_text()
+        
+        # Phone number patterns - be more specific to avoid timestamps
+        phone_patterns = [
+            r'\b\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b',  # (555) 123-4567 or 555-123-4567
+            r'\b\d{3}[\s.-]?\d{3}[\s.-]?\d{4}\b',        # 5551234567
+            r'\b\(\d{3}\)\s*\d{3}-\d{4}\b',               # (555) 123-4567
+        ]
+        
+        for pattern in phone_patterns:
+            phone_match = re.search(pattern, text)
+            if phone_match:
+                phone = phone_match.group()
+                # Filter out timestamps and other non-phone patterns
+                if not re.search(r'\d{4}-\d{2}-\d{2}', phone) and len(phone) >= 10:
+                    return phone
+        
+        # Look for contact buttons or links
+        contact_selectors = [
+            '[data-testid="contact-button"]',
+            '.contact-button',
+            '[data-testid="phone-button"]',
+            '.phone-button',
+            '[data-testid="contact-info"]',
+            '.contact-info',
+            'a[href^="tel:"]',
+            'a[href^="mailto:"]',
+            '[data-testid="agent-phone"]',
+            '.agent-phone',
+            '[data-testid="property-manager-phone"]',
+            '.property-manager-phone'
+        ]
+        
+        for selector in contact_selectors:
+            element = soup.select_one(selector)
+            if element:
+                # Extract phone or email from href
+                href = element.get('href', '')
+                if href.startswith('tel:'):
+                    phone = href.replace('tel:', '')
+                    if len(phone) >= 10:
+                        return phone
+                elif href.startswith('mailto:'):
+                    return href.replace('mailto:', '')
+                else:
+                    # Extract text content
+                    text_content = element.get_text().strip()
+                    if text_content and len(text_content) >= 10:
+                        # Check if it looks like a phone number
+                        if re.search(r'\d{3}.*\d{3}.*\d{4}', text_content):
+                            return text_content
+        
+        return None
+    
+    def _extract_appointment_url(self, soup: BeautifulSoup) -> Optional[str]:
+        """Extract appointment/scheduling URL from Zillow"""
+        # Look for tour/appointment buttons
+        appointment_selectors = [
+            '[data-testid="schedule-tour"]',
+            '[data-testid="request-tour"]',
+            '[data-testid="schedule-appointment"]',
+            '.schedule-tour',
+            '.request-tour',
+            '.schedule-appointment',
+            'a[href*="tour"]',
+            'a[href*="appointment"]',
+            'a[href*="schedule"]',
+            'a[href*="apply"]',
+            'a[href*="application"]'
+        ]
+        
+        for selector in appointment_selectors:
+            element = soup.select_one(selector)
+            if element:
+                href = element.get('href', '')
+                if href:
+                    # Convert relative URLs to absolute
+                    if href.startswith('/'):
+                        return f"https://www.zillow.com{href}"
+                    elif href.startswith('http'):
+                        return href
+                    else:
+                        return f"https://www.zillow.com/{href}"
+        
+        # Look for "Request a tour" or "Request to apply" buttons
+        text = soup.get_text()
+        tour_patterns = [
+            r'request\s+a\s+tour',
+            r'schedule\s+a\s+tour',
+            r'request\s+to\s+apply',
+            r'apply\s+now',
+            r'schedule\s+appointment'
+        ]
+        
+        for pattern in tour_patterns:
+            if re.search(pattern, text, re.IGNORECASE):
+                # If we find the text but no URL, return a generic Zillow application URL
+                return "https://www.zillow.com/rental-manager/apply/"
+        
+        return None

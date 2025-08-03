@@ -178,6 +178,8 @@ class ScraperBase(DataSource):
         amenities = self._extract_amenities(soup)
         available_date = self._extract_available_date(soup)
         parking = self._extract_parking(soup)
+        contact_info = self._extract_contact_info(soup)
+        appointment_url = self._extract_appointment_url(soup)
         
         return RentalListing(
             url=url,
@@ -191,6 +193,8 @@ class ScraperBase(DataSource):
             amenities=amenities,
             available_date=available_date,
             parking=parking,
+            contact_info=contact_info,
+            appointment_url=appointment_url,
             scraped_at=datetime.now()
         )
     
@@ -228,4 +232,12 @@ class ScraperBase(DataSource):
     
     def _extract_parking(self, soup: BeautifulSoup) -> Optional[str]:
         """Extract parking information"""
+        return None
+
+    def _extract_contact_info(self, soup: BeautifulSoup) -> Optional[str]:
+        """Extract contact information (e.g., phone number, email)"""
+        return None
+
+    def _extract_appointment_url(self, soup: BeautifulSoup) -> Optional[str]:
+        """Extract the URL for scheduling an appointment"""
         return None
