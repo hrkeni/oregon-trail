@@ -46,3 +46,5 @@ cache.db
 # Google Sheets credentials
 credentials.json
 token.json 
+
+urls.txt

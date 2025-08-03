@@ -61,14 +61,25 @@ python main.py add --url "https://www.zillow.com/homedetails/..." --share-with "
 ### Add Listings
 
 ```bash
-# Scrape from any supported site (Zillow, Trulia, Rent.com, HotPads, etc.)
+# Scrape a single URL
 python main.py add --url "https://www.trulia.com/home/..."
+
+# Scrape multiple URLs from a file
+python main.py add --file "urls.txt"
 
 # Add and share with partner
 python main.py add --url "..." --share-with "partner@email.com"
 ```
 
 **Note**: Re-running the same URL will update the existing listing instead of creating a duplicate.
+
+**File Format**: Create a text file with one URL per line:
+
+```
+https://www.zillow.com/homedetails/...
+https://www.trulia.com/home/...
+https://hotpads.com/...
+```
 
 ### View All Listings
 

@@ -6,6 +6,7 @@ from datetime import datetime
 from .models import RentalListing
 from .scraper import RentalScraper
 from .sheets import GoogleSheetsManager
+from pathlib import Path
 
 
 @click.group()
@@ -15,11 +16,21 @@ def cli():
 
 
 @cli.command()
-@click.option('--url', '-u', required=True, help='Rental listing URL to scrape')
+@click.option('--url', '-u', help='Rental listing URL to scrape')
+@click.option('--file', '-f', help='File containing URLs (one per line)')
 @click.option('--sheet-name', default='Oregon Rental Listings', help='Google Sheet name')
 @click.option('--share-with', help='Email to share the sheet with')
-def add(url: str, sheet_name: str, share_with: Optional[str]):
-    """Add a rental listing to the Google Sheet"""
+def add(url: Optional[str], file: Optional[str], sheet_name: str, share_with: Optional[str]):
+    """Add rental listing(s) to the Google Sheet"""
+    
+    # Validate input
+    if not url and not file:
+        click.echo("❌ Error: Must provide either --url or --file")
+        return
+    
+    if url and file:
+        click.echo("❌ Error: Cannot provide both --url and --file")
+        return
     
     # Initialize components
     try:
@@ -31,9 +42,20 @@ def add(url: str, sheet_name: str, share_with: Optional[str]):
         click.echo("Make sure you have credentials.json in the project root")
         return
     
-    # Scrape from URL
-    click.echo(f"🔍 Scraping listing from: {url}")
     scraper = RentalScraper()
+    
+    if url:
+        # Process single URL
+        _process_single_url(url, scraper, sheets_manager, worksheet, share_with, sheet_name)
+    else:
+        # Process file with multiple URLs
+        _process_url_file(file, scraper, sheets_manager, worksheet, share_with, sheet_name)
+
+
+def _process_single_url(url: str, scraper: RentalScraper, sheets_manager: GoogleSheetsManager, 
+                        worksheet, share_with: Optional[str], sheet_name: str):
+    """Process a single URL"""
+    click.echo(f"🔍 Scraping listing from: {url}")
     listing = scraper.scrape_listing(url)
     
     if not listing:
@@ -60,6 +82,67 @@ def add(url: str, sheet_name: str, share_with: Optional[str]):
                 click.echo(f"❌ Failed to share sheet with: {share_with}")
     else:
         click.echo("❌ Failed to add listing to sheet")
+
+
+def _process_url_file(file_path: str, scraper: RentalScraper, sheets_manager: GoogleSheetsManager, 
+                     worksheet, share_with: Optional[str], sheet_name: str):
+    """Process a file containing URLs"""
+    try:
+        file_path = Path(file_path)
+        if not file_path.exists():
+            click.echo(f"❌ Error: File not found: {file_path}")
+            return
+        
+        with open(file_path, 'r') as f:
+            urls = [line.strip() for line in f if line.strip()]
+        
+        if not urls:
+            click.echo("❌ Error: No URLs found in file")
+            return
+        
+        click.echo(f"📄 Processing {len(urls)} URLs from {file_path}")
+        click.echo("-" * 50)
+        
+        successful = 0
+        failed = 0
+        
+        for i, url in enumerate(urls, 1):
+            click.echo(f"[{i}/{len(urls)}] 🔍 Scraping: {url}")
+            
+            listing = scraper.scrape_listing(url)
+            
+            if not listing:
+                click.echo(f"   ❌ Failed to scrape listing")
+                failed += 1
+                continue
+            
+            # Check if listing already exists
+            existing_row = sheets_manager.find_listing_row(listing.url, worksheet)
+            is_update = existing_row is not None
+            
+            # Add or update listing in sheet
+            if sheets_manager.add_or_update_listing(listing, worksheet):
+                if is_update:
+                    click.echo(f"   ✅ Updated: {listing.address}")
+                else:
+                    click.echo(f"   ✅ Added: {listing.address}")
+                successful += 1
+            else:
+                click.echo(f"   ❌ Failed to add to sheet")
+                failed += 1
+        
+        click.echo("-" * 50)
+        click.echo(f"📊 Summary: {successful} successful, {failed} failed")
+        
+        # Share if requested (only once at the end)
+        if share_with and successful > 0:
+            if sheets_manager.share_sheet(share_with, sheet_name):
+                click.echo(f"📧 Shared sheet with: {share_with}")
+            else:
+                click.echo(f"❌ Failed to share sheet with: {share_with}")
+                
+    except Exception as e:
+        click.echo(f"❌ Error processing file: {str(e)}")
 
 
 @cli.command()
