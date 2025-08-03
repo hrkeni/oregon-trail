@@ -99,7 +99,7 @@ class ScraperBase(DataSource):
         sqft = self._extract_sqft(soup)
         description = self._extract_description(soup)
         amenities = self._extract_amenities(soup)
-        pet_policy = self._extract_pet_policy(soup)
+        available_date = self._extract_available_date(soup)
         parking = self._extract_parking(soup)
         
         return RentalListing(
@@ -111,7 +111,7 @@ class ScraperBase(DataSource):
             sqft=sqft,
             description=description,
             amenities=amenities,
-            pet_policy=pet_policy,
+            available_date=available_date,
             parking=parking,
             scraped_at=datetime.now()
         )
@@ -140,8 +140,8 @@ class ScraperBase(DataSource):
         """Extract amenities list"""
         return []
     
-    def _extract_pet_policy(self, soup: BeautifulSoup) -> Optional[str]:
-        """Extract pet policy"""
+    def _extract_available_date(self, soup: BeautifulSoup) -> Optional[str]:
+        """Extract available date"""
         return None
     
     def _extract_parking(self, soup: BeautifulSoup) -> Optional[str]:

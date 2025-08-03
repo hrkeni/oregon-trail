@@ -145,17 +145,6 @@ class TruliaDataSource(ScraperBase):
         
         return amenities[:10]
     
-    def _extract_pet_policy(self, soup: BeautifulSoup) -> Optional[str]:
-        """Extract pet policy from Trulia"""
-        text = soup.get_text()
-        
-        if 'pet friendly' in text.lower():
-            return "Pet Friendly"
-        elif 'no pets' in text.lower():
-            return "No Pets"
-        
-        return None
-    
     def _extract_parking(self, soup: BeautifulSoup) -> Optional[str]:
         """Extract parking information from Trulia"""
         text = soup.get_text()

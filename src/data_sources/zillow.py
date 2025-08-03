@@ -61,6 +61,7 @@ class ZillowDataSource(ScraperBase):
     
     def _extract_beds_baths(self, soup: BeautifulSoup) -> tuple[Optional[str], Optional[str]]:
         """Extract bedroom and bathroom counts from Zillow"""
+        # First try specific selectors
         bed_bath_selectors = [
             '[data-testid="bed-bath-brief"]',
             '.bed-bath-brief',
@@ -89,6 +90,19 @@ class ZillowDataSource(ScraperBase):
                 if beds and baths:
                     break
         
+        # If not found, search the entire page text
+        if not beds or not baths:
+            text = soup.get_text()
+            # Look for patterns like "3beds" or "3 beds" or "3 bedrooms"
+            bed_match = re.search(r'(\d+)\s*(?:beds?|bedrooms?)\b', text, re.IGNORECASE)
+            if bed_match:
+                beds = bed_match.group(1)
+            
+            # Look for patterns like "3baths" or "3 baths" or "3 bathrooms"
+            bath_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:baths?|bathrooms?)\b', text, re.IGNORECASE)
+            if bath_match:
+                baths = bath_match.group(1)
+        
         return beds, baths
     
     def _extract_sqft(self, soup: BeautifulSoup) -> Optional[str]:
@@ -108,6 +122,12 @@ class ZillowDataSource(ScraperBase):
                 sqft_match = re.search(r'([\d,]+)\s*sq\s*ft', text, re.IGNORECASE)
                 if sqft_match:
                     return sqft_match.group(1)
+        
+        # If not found in specific elements, search the entire page
+        text = soup.get_text()
+        sqft_match = re.search(r'([\d,]+)\s*sq\s*ft', text, re.IGNORECASE)
+        if sqft_match:
+            return sqft_match.group(1)
         
         return None
     
@@ -133,6 +153,7 @@ class ZillowDataSource(ScraperBase):
         """Extract amenities list from Zillow"""
         amenities = []
         
+        # Try specific amenity selectors first
         amenity_selectors = [
             '[data-testid="amenities"]',
             '.amenities',
@@ -149,4 +170,66 @@ class ZillowDataSource(ScraperBase):
                 if amenity and len(amenity) < 100:
                     amenities.append(amenity)
         
+        # If no amenities found, extract from page text
+        if not amenities:
+            text = soup.get_text()
+            
+            # Common amenities to look for
+            amenity_keywords = [
+                'stainless steel appliances', 'dishwasher', 'microwave', 'refrigerator',
+                'washer', 'dryer', 'air conditioning', 'heating', 'walk-in closet',
+                'patio', 'backyard', 'garage', 'parking', 'laundry', 'pantry',
+                'quartz counters', 'walk-in shower', 'double sinks', 'fenced-in backyard',
+                'paver patio', 'spacious master bedroom', 'separate climate control',
+                'wall unit', 'wall furnace', 'attached garage', 'in unit laundry'
+            ]
+            
+            for keyword in amenity_keywords:
+                if keyword.lower() in text.lower():
+                    amenities.append(keyword.title())
+        
         return amenities[:10]
+    
+    def _extract_parking(self, soup: BeautifulSoup) -> Optional[str]:
+        """Extract parking information from Zillow"""
+        text = soup.get_text()
+        
+        # Look for parking information
+        parking_keywords = [
+            'attached garage', 'garage parking', 'off street parking',
+            'parking features', 'has attached garage'
+        ]
+        
+        for keyword in parking_keywords:
+            if keyword.lower() in text.lower():
+                return keyword.title()
+        
+        # Look for specific parking patterns
+        parking_match = re.search(r'(attached|detached|garage|parking)', text, re.IGNORECASE)
+        if parking_match:
+            return parking_match.group(1).title()
+        
+        return None
+    
+    def _extract_available_date(self, soup: BeautifulSoup) -> Optional[str]:
+        """Extract available date from Zillow"""
+        text = soup.get_text()
+        
+        # Look for availability patterns
+        availability_patterns = [
+            r'available\s+(?:now|immediately)',
+            r'available\s+(\w+\s+\d+)',
+            r'available\s+(\d+/\d+/\d+)',
+            r'available\s+(\w+\s+\d{4})'
+        ]
+        
+        for pattern in availability_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                return match.group(0).title()
+        
+        # Look for "Available now" specifically
+        if 'available now' in text.lower():
+            return "Available Now"
+        
+        return None

@@ -15,7 +15,6 @@ class RentalListing:
     description: Optional[str] = None
     amenities: Optional[List[str]] = None
     available_date: Optional[str] = None
-    pet_policy: Optional[str] = None
     parking: Optional[str] = None
     utilities: Optional[str] = None
     scraped_at: Optional[datetime] = None
@@ -33,7 +32,6 @@ class RentalListing:
             self.description or "",
             ", ".join(self.amenities or []),
             self.available_date or "",
-            self.pet_policy or "",
             self.parking or "",
             self.utilities or "",
             self.scraped_at.isoformat() if self.scraped_at else "",
@@ -53,7 +51,6 @@ class RentalListing:
             "Description",
             "Amenities",
             "Available Date",
-            "Pet Policy",
             "Parking",
             "Utilities",
             "Scraped At",

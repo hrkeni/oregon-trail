@@ -72,12 +72,12 @@ class GoogleSheetsManager:
         try:
             # Check if headers already exist
             existing_headers = worksheet.row_values(1)
-            if existing_headers and len(existing_headers) >= 14:
+            if existing_headers and len(existing_headers) >= 13:
                 logger.info("Headers already exist in worksheet")
                 return
             
             headers = RentalListing.get_sheet_headers()
-            worksheet.update('A1:N1', [headers])
+            worksheet.update('A1:M1', [headers])
             logger.info("Set up headers in worksheet")
         except Exception as e:
             logger.error(f"Failed to setup headers: {str(e)}")
@@ -109,14 +109,14 @@ class GoogleSheetsManager:
             
             if existing_row:
                 # Update existing row
-                worksheet.update(f'A{existing_row}:N{existing_row}', [row_data])
+                worksheet.update(f'A{existing_row}:M{existing_row}', [row_data])
                 logger.info(f"Updated listing in row {existing_row}: {listing.address}")
                 return True
             else:
                 # Add new row
                 all_values = worksheet.get_all_values()
                 next_row = len(all_values) + 1
-                worksheet.update(f'A{next_row}:N{next_row}', [row_data])
+                worksheet.update(f'A{next_row}:M{next_row}', [row_data])
                 logger.info(f"Added listing to row {next_row}: {listing.address}")
                 return True
             
@@ -148,11 +148,10 @@ class GoogleSheetsManager:
                         description=row[6] if len(row) > 6 else None,
                         amenities=row[7].split(", ") if len(row) > 7 and row[7] else None,
                         available_date=row[8] if len(row) > 8 else None,
-                        pet_policy=row[9] if len(row) > 9 else None,
-                        parking=row[10] if len(row) > 10 else None,
-                        utilities=row[11] if len(row) > 11 else None,
-                        scraped_at=datetime.fromisoformat(row[12]) if len(row) > 12 and row[12] else None,
-                        notes=row[13] if len(row) > 13 else None
+                        parking=row[9] if len(row) > 9 else None,
+                        utilities=row[10] if len(row) > 10 else None,
+                        scraped_at=datetime.fromisoformat(row[11]) if len(row) > 11 and row[11] else None,
+                        notes=row[12] if len(row) > 12 else None
                     )
                     listings.append(listing)
             
@@ -169,7 +168,7 @@ class GoogleSheetsManager:
             
             for i, row in enumerate(all_values[1:], start=2):  # Skip headers
                 if row[0] == url:  # Match by URL
-                    worksheet.update(f'N{i}', notes)
+                    worksheet.update(f'M{i}', notes)
                     logger.info(f"Updated notes for listing: {url}")
                     return True
             
