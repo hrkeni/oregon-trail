@@ -12,6 +12,7 @@ class RentalListing:
     beds: Optional[str] = None
     baths: Optional[str] = None
     sqft: Optional[str] = None
+    house_type: Optional[str] = None
     description: Optional[str] = None
     amenities: Optional[List[str]] = None
     available_date: Optional[str] = None
@@ -29,6 +30,7 @@ class RentalListing:
             self.beds or "",
             self.baths or "",
             self.sqft or "",
+            self.house_type or "",
             self.description or "",
             ", ".join(self.amenities or []),
             self.available_date or "",
@@ -48,6 +50,7 @@ class RentalListing:
             "Beds",
             "Baths",
             "Sqft",
+            "House Type",
             "Description",
             "Amenities",
             "Available Date",

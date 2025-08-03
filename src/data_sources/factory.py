@@ -8,6 +8,7 @@ from .rent_com import RentComDataSource
 from .apartments_com import ApartmentsComDataSource
 from .craigslist import CraigslistDataSource
 from .redfin import RedfinDataSource
+from .hotpads import HotPadsDataSource
 from ..cache import WebPageCache
 
 logger = logging.getLogger(__name__)
@@ -25,6 +26,7 @@ class DataSourceFactory:
             ApartmentsComDataSource(cache=cache),
             CraigslistDataSource(cache=cache),
             RedfinDataSource(cache=cache),
+            HotPadsDataSource(cache=cache),
         ]
     
     def get_data_source(self, url: str) -> Optional[DataSource]:

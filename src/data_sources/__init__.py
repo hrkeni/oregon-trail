@@ -12,6 +12,7 @@ from .rent_com import RentComDataSource
 from .apartments_com import ApartmentsComDataSource
 from .craigslist import CraigslistDataSource
 from .redfin import RedfinDataSource
+from .hotpads import HotPadsDataSource
 from .example_api import ExampleAPIDataSource
 
 __all__ = [
@@ -25,5 +26,6 @@ __all__ = [
     'ApartmentsComDataSource',
     'CraigslistDataSource',
     'RedfinDataSource',
+    'HotPadsDataSource',
     'ExampleAPIDataSource',
 ]

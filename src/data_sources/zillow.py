@@ -211,6 +211,66 @@ class ZillowDataSource(ScraperBase):
         
         return None
     
+    def _extract_house_type(self, soup: BeautifulSoup) -> Optional[str]:
+        """Extract house type from Zillow"""
+        text = soup.get_text()
+        
+        # Look for specific house type patterns in Zillow's format
+        house_type_patterns = [
+            r'townhouse\s+for\s+rent',
+            r'house\s+for\s+rent',
+            r'apartment\s+for\s+rent',
+            r'condo\s+for\s+rent',
+            r'condominium\s+for\s+rent',
+            r'home\s+type:\s*(\w+)',
+            r'property\s+type:\s*(\w+)',
+            r'property\s+subtype:\s*(\w+)',
+            r'type\s*&\s*style.*?home\s+type:\s*(\w+)',
+            r'type\s*&\s*style.*?property\s+subtype:\s*(\w+)'
+        ]
+        
+        for pattern in house_type_patterns:
+            match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
+            if match:
+                house_type = match.group(1) if len(match.groups()) > 0 else match.group(0)
+                # Clean up the house type
+                if 'townhouse' in house_type.lower():
+                    return "Townhouse"
+                elif 'house' in house_type.lower():
+                    return "House"
+                elif 'apartment' in house_type.lower():
+                    return "Apartment"
+                elif 'condo' in house_type.lower():
+                    return "Condo"
+                else:
+                    return house_type.title()
+        
+        # Look for specific keywords in the page (more targeted search)
+        # Search in specific sections first
+        facts_section = soup.find('div', string=re.compile(r'facts\s*&\s*features', re.IGNORECASE))
+        if facts_section:
+            facts_text = facts_section.get_text()
+            if 'townhouse' in facts_text.lower():
+                return "Townhouse"
+            elif 'house' in facts_text.lower() and 'townhouse' not in facts_text.lower():
+                return "House"
+            elif 'apartment' in facts_text.lower():
+                return "Apartment"
+            elif 'condo' in facts_text.lower():
+                return "Condo"
+        
+        # Fallback to general page search
+        if 'townhouse' in text.lower():
+            return "Townhouse"
+        elif 'house' in text.lower() and 'townhouse' not in text.lower():
+            return "House"
+        elif 'apartment' in text.lower():
+            return "Apartment"
+        elif 'condo' in text.lower() or 'condominium' in text.lower():
+            return "Condo"
+        
+        return None
+    
     def _extract_available_date(self, soup: BeautifulSoup) -> Optional[str]:
         """Extract available date from Zillow"""
         text = soup.get_text()

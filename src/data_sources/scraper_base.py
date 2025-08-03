@@ -116,6 +116,7 @@ class ScraperBase(DataSource):
         price = self._extract_price(soup)
         beds, baths = self._extract_beds_baths(soup)
         sqft = self._extract_sqft(soup)
+        house_type = self._extract_house_type(soup)
         description = self._extract_description(soup)
         amenities = self._extract_amenities(soup)
         available_date = self._extract_available_date(soup)
@@ -128,6 +129,7 @@ class ScraperBase(DataSource):
             beds=beds,
             baths=baths,
             sqft=sqft,
+            house_type=house_type,
             description=description,
             amenities=amenities,
             available_date=available_date,
@@ -149,6 +151,10 @@ class ScraperBase(DataSource):
     
     def _extract_sqft(self, soup: BeautifulSoup) -> Optional[str]:
         """Extract square footage"""
+        return None
+    
+    def _extract_house_type(self, soup: BeautifulSoup) -> Optional[str]:
+        """Extract house type (House, Townhouse, Apartment, etc.)"""
         return None
     
     def _extract_description(self, soup: BeautifulSoup) -> Optional[str]:

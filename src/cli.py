@@ -83,6 +83,7 @@ def list(sheet_name: str):
             click.echo(f"{i}. {listing.address}")
             click.echo(f"   Price: {listing.price or 'N/A'}")
             click.echo(f"   Beds/Baths: {listing.beds or 'N/A'}/{listing.baths or 'N/A'}")
+            click.echo(f"   House Type: {listing.house_type or 'N/A'}")
             click.echo(f"   URL: {listing.url}")
             if listing.notes:
                 click.echo(f"   Notes: {listing.notes}")
