@@ -131,6 +131,43 @@ def share(email: str, sheet_name: str):
 
 
 @cli.command()
+@click.option('--sheet-name', default='Oregon Rental Listings', help='Google Sheet name')
+@click.option('--force', '-f', is_flag=True, help='Skip confirmation prompt')
+def clear(sheet_name: str, force: bool):
+    """Clear all rental listings from the sheet"""
+    
+    try:
+        sheets_manager = GoogleSheetsManager()
+        worksheet = sheets_manager.create_or_get_sheet(sheet_name)
+        
+        # Get current listings count
+        all_values = worksheet.get_all_values()
+        listing_count = len(all_values) - 1 if len(all_values) > 1 else 0
+        
+        if listing_count == 0:
+            click.echo("📋 No listings to clear")
+            return
+        
+        # Show confirmation prompt unless --force is used
+        if not force:
+            click.echo(f"⚠️  This will permanently delete {listing_count} listing(s) from the sheet.")
+            click.echo("This action cannot be undone!")
+            
+            if not click.confirm("Are you sure you want to continue?"):
+                click.echo("❌ Operation cancelled")
+                return
+        
+        # Clear the listings
+        if sheets_manager.clear_all_listings(worksheet):
+            click.echo(f"✅ Cleared {listing_count} listing(s) from the sheet")
+        else:
+            click.echo("❌ Failed to clear listings")
+    
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}")
+
+
+@cli.command()
 def setup():
     """Setup instructions for Google Sheets API"""
     click.echo("🔧 Google Sheets API Setup Instructions:")

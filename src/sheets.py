@@ -189,4 +189,27 @@ class GoogleSheetsManager:
             return True
         except Exception as e:
             logger.error(f"Failed to share sheet: {str(e)}")
+            return False
+    
+    def clear_all_listings(self, worksheet: gspread.Worksheet) -> bool:
+        """Clear all listing data from the worksheet (preserves headers)"""
+        try:
+            all_values = worksheet.get_all_values()
+            if len(all_values) <= 1:  # Only headers or empty
+                logger.info("No data to clear")
+                return True
+            
+            # Clear all rows except headers (row 1)
+            if len(all_values) > 1:
+                # Delete rows from bottom to top to avoid index shifting issues
+                for row_num in range(len(all_values), 1, -1):
+                    worksheet.delete_rows(row_num)
+                
+                logger.info(f"Cleared {len(all_values) - 1} listings from worksheet")
+                return True
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to clear listings: {str(e)}")
             return False 
