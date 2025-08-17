@@ -14,6 +14,8 @@ A simple CLI tool to scrape rental listings from multiple sources and save them 
 - 🔄 **Smart Updates**: Updates existing listings instead of creating duplicates when re-scraping the same URL
 - 🛡️ **Manual Edit Protection**: Preserves manually modified fields during updates using hash-based detection
 - 📊 **Google Sheets Integration**: Save all listings to a shared spreadsheet
+- 🎯 **Decision Tracking**: Track your decisions on properties with a dedicated column
+- 📊 **Smart Sorting**: Sort listings by decision status in priority order
 - 🗑️ **Data Management**: Clear all listings with confirmation prompts
 - 💾 **Smart Caching**: SQLite-based cache to avoid crawling limits and improve performance
 - 👥 **Collaboration**: Share the sheet with your partner for joint review
@@ -113,6 +115,22 @@ python main.py list --detailed
 python main.py update-notes --url "https://www.zillow.com/homedetails/..." --notes "Great location, but expensive"
 ```
 
+### Update Decision
+
+```bash
+python main.py update-decision --url "https://www.zillow.com/homedetails/..." --decision "Interested"
+```
+
+### Sort by Status
+
+```bash
+# Show what would be sorted without making changes
+python main.py sort-by-status --dry-run
+
+# Sort listings by decision status in priority order
+python main.py sort-by-status
+```
+
 ### Share Sheet
 
 ```bash
@@ -191,6 +209,20 @@ Each listing includes:
 - **Appointment URL**: Link for scheduling viewings/applications
 - **Scraped At**: When the data was collected
 - **Notes**: Your personal notes (preserved during updates)
+- **Decision**: Your decision on the property (preserved during updates)
+  - **Valid options**: "Pending Review" (default), "Interested", "Shortlisted", "Rejected", "Appointment Scheduled"
+
+## Sorting Priority
+
+The `sort-by-status` command organizes listings by decision status in the following priority order:
+
+1. **Pending Review** - New listings that need your attention
+2. **Interested** - Properties you're considering
+3. **Shortlisted** - Top candidates for further review
+4. **Appointment Scheduled** - Properties you're actively pursuing
+5. **Rejected** - Properties you've decided against
+
+This sorting ensures that your highest-priority listings (those requiring action) appear at the top of the sheet.
 
 ## Legal & Ethical Considerations
 
@@ -235,7 +267,7 @@ oregon-trail/
 │   │   ├── __init__.py        # Main CLI entry point
 │   │   ├── cli_utils.py       # Shared utility functions for CLI commands
 │   │   └── commands/          # Command implementations organized by concern
-│   │       ├── core.py        # Core rental listing commands (add, list, update-notes, share, clear, rescrape)
+│   │       ├── core.py        # Core rental listing commands (add, list, update-notes, update-decision, sort-by-status, share, clear, rescrape)
 │   │       ├── data_protection.py # Field protection commands (notes-status, protection-status, protect-fields, etc.)
 │   │       ├── cache_management.py # Cache management commands (cache-stats, cache-clear)
 │   │       └── setup.py       # Setup and help commands
@@ -253,6 +285,8 @@ oregon-trail/
 │       └── hotpads.py         # HotPads scraper
 ├── main.py                    # Entry point
 ├── requirements.txt           # Dependencies
+├── mcp.json                  # MCP configuration for dbhub database access
+├── MCP_README.md             # MCP configuration documentation
 └── README.md
 ```
 
@@ -280,6 +314,17 @@ The CLI is organized with **separation of concerns** while maintaining a **flat 
 - **Consistency**: All commands use the same error handling and validation patterns
 - **Scalability**: Easy to add new commands without cluttering existing files
 - **Testing**: Individual command files can be tested separately
+
+### MCP (Model Context Protocol) Integration
+
+This project includes MCP configuration for enhanced AI assistant capabilities:
+
+- **`mcp.json`**: Configuration for dbhub MCP server
+- **Database Access**: Direct SQLite database querying through MCP
+- **Cache Analysis**: AI assistants can analyze your cache patterns and field protection
+- **Performance Insights**: Query database statistics and usage patterns
+
+See `MCP_README.md` for detailed configuration and usage examples.
 
 See `src/data_sources/README.md` for detailed instructions on adding new data sources.
 

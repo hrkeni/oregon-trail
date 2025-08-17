@@ -23,6 +23,7 @@ class RentalListing:
     appointment_url: Optional[str] = None
     scraped_at: Optional[datetime] = None
     notes: Optional[str] = None
+    decision: Optional[str] = "Pending Review"
 
     def to_sheet_row(self) -> List[str]:
         """Convert listing to a row for Google Sheets"""
@@ -42,7 +43,8 @@ class RentalListing:
             self.contact_info or "",
             self.appointment_url or "",
             self.scraped_at.isoformat() if self.scraped_at else "",
-            self.notes or ""
+            self.notes or "",
+            self.decision or "Pending Review"
         ]
     
     def to_hash_row(self) -> List[str]:
@@ -63,7 +65,8 @@ class RentalListing:
             self._hash_field(self.contact_info),
             self._hash_field(self.appointment_url),
             self._hash_field(self.scraped_at.isoformat() if self.scraped_at else ""),
-            self._hash_field(self.notes)
+            self._hash_field(self.notes),
+            self._hash_field(self.decision)
         ]
     
     def _hash_field(self, value: Optional[str]) -> str:
@@ -91,7 +94,19 @@ class RentalListing:
             "Contact Info",
             "Appointment URL",
             "Scraped At",
-            "Notes"
+            "Notes",
+            "Decision"
+        ]
+    
+    @classmethod
+    def get_decision_options(cls) -> List[str]:
+        """Get valid decision options"""
+        return [
+            "Pending Review",
+            "Interested", 
+            "Shortlisted",
+            "Rejected",
+            "Appointment Scheduled"
         ]
     
  

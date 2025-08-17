@@ -1,0 +1,86 @@
+{
+    "mcpServers": {
+        "dbhub": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "@modelcontextprotocol/server-dbhub"
+            ],
+            "env": {
+                "MCP_DBHUB_DATABASE_PATH": "./cache.db",
+                "MCP_DBHUB_DATABASE_TYPE": "sqlite"
+            },
+            "description": "Access to Oregon Trail rental listing cache database",
+            "databaseInfo": {
+                "name": "cache.db",
+                "type": "sqlite",
+                "purpose": "Rental listing cache and field protection system",
+                "tables": {
+                    "web_pages": "Primary web page content cache (actively used)",
+                    "field_hashes": "Field-level hash tracking for manual edit protection (actively used)",
+                    "page_cache": "Legacy web page cache with URL hashing (not currently used)"
+                },
+                "activeTables": [
+                    "web_pages",
+                    "field_hashes"
+                ],
+                "schema": {
+                    "web_pages": [
+                        "url (TEXT PRIMARY KEY) - Rental listing URL",
+                        "content (TEXT) - Cached HTML/content from the page",
+                        "headers (TEXT) - HTTP response headers (JSON)",
+                        "status_code (INTEGER) - HTTP status code",
+                        "cached_at (TIMESTAMP) - When the page was cached"
+                    ],
+                    "field_hashes": [
+                        "url (TEXT) - Rental listing URL",
+                        "field_name (TEXT) - Field name (url, address, price, beds, baths, sqft, house_type, description, amenities, available_date, parking, utilities, contact_info, appointment_url, scraped_at, notes, decision)",
+                        "field_hash (TEXT) - MD5 hash of field value (8 chars)",
+                        "last_updated (TIMESTAMP) - When hash was last updated",
+                        "PRIMARY KEY (url, field_name)"
+                    ],
+                    "page_cache": [
+                        "url_hash (TEXT PRIMARY KEY) - Unique hash identifier",
+                        "url (TEXT NOT NULL) - Original rental listing URL",
+                        "content (TEXT NOT NULL) - Cached HTML/content",
+                        "headers (TEXT) - HTTP response headers",
+                        "status_code (INTEGER) - HTTP status code",
+                        "created_at (TIMESTAMP) - When first cached",
+                        "last_accessed (TIMESTAMP) - Last access time"
+                    ]
+                },
+                "usagePatterns": {
+                    "field_protection": "Tracks manual edits to prevent data loss during rescraping",
+                    "web_caching": "Stores scraped rental listing content to avoid re-scraping",
+                    "hash_management": "Uses MD5 hashes to detect field changes and preserve manual edits"
+                },
+                "fieldNames": [
+                    "url",
+                    "address",
+                    "price",
+                    "beds",
+                    "baths",
+                    "sqft",
+                    "house_type",
+                    "description",
+                    "amenities",
+                    "available_date",
+                    "parking",
+                    "utilities",
+                    "contact_info",
+                    "appointment_url",
+                    "scraped_at",
+                    "notes",
+                    "decision"
+                ],
+                "cliCommands": [
+                    "cache-stats - Show cache statistics",
+                    "cache-clear - Clear expired cache entries",
+                    "protection-status - Show field protection status",
+                    "notes-status - Show which listings have notes",
+                    "reset-hashes - Reset field hashes for a listing"
+                ]
+            }
+        }
+    }
+}

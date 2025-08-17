@@ -190,6 +190,112 @@ def update_notes(url: str, notes: str, sheet_name: str):
 
 
 @click.command()
+@click.option('--url', '-u', required=True, help='URL of the listing to update')
+@click.option('--decision', '-d', required=True, 
+              type=click.Choice(['Pending Review', 'Interested', 'Shortlisted', 'Rejected', 'Appointment Scheduled']),
+              help='New decision for the listing')
+@click.option('--sheet-name', default='Oregon Rental Listings', help='Google Sheet name')
+def update_decision(url: str, decision: str, sheet_name: str):
+    """Update decision for a specific listing"""
+    
+    try:
+        sheets_manager, worksheet = get_sheets_manager_and_worksheet(sheet_name)
+        
+        if sheets_manager.update_listing_decision(url, decision, worksheet):
+            click.echo(f"✅ Updated decision for listing: {url}")
+            click.echo(f"   Decision: {decision}")
+        else:
+            click.echo(f"❌ Listing not found: {url}")
+    
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}")
+
+
+@click.command()
+@click.option('--sheet-name', default='Oregon Rental Listings', help='Google Sheet name')
+@click.option('--dry-run', is_flag=True, help='Show what would be sorted without making changes')
+def sort_by_status(sheet_name: str, dry_run: bool):
+    """Sort listings by decision status in priority order"""
+    
+    try:
+        sheets_manager, worksheet = get_sheets_manager_and_worksheet(sheet_name)
+        
+        # Get all listings from the sheet
+        listings = sheets_manager.get_all_listings(worksheet)
+        
+        if not listings:
+            click.echo("📋 No listings found in the sheet")
+            return
+        
+        click.echo(f"📋 Found {len(listings)} listings to sort")
+        
+        # Define decision priority order (lower index = higher priority)
+        decision_priority = {
+            "Pending Review": 0,
+            "Interested": 1,
+            "Shortlisted": 2,
+            "Appointment Scheduled": 3,
+            "Rejected": 4
+        }
+        
+        # Sort listings by decision priority
+        sorted_listings = sorted(listings, key=lambda x: decision_priority.get(x.decision or "Pending Review", 5))
+        
+        # Show current order vs. proposed order
+        click.echo("\n📊 Current vs. Proposed Order:")
+        click.echo("-" * 80)
+        click.echo(f"{'Current':<8} {'Proposed':<8} {'Decision':<20} {'Address':<40}")
+        click.echo("-" * 80)
+        
+        for i, (original, sorted_listing) in enumerate(zip(listings, sorted_listings)):
+            current_pos = f"{i+1:2d}"
+            proposed_pos = f"{sorted_listings.index(original)+1:2d}"
+            decision = original.decision or "Pending Review"
+            address = original.address[:37] + "..." if len(original.address) > 40 else original.address
+            
+            if current_pos != proposed_pos:
+                click.echo(f"{current_pos:>8} → {proposed_pos:<8} {decision:<20} {address}")
+            else:
+                click.echo(f"{current_pos:>8} = {proposed_pos:<8} {decision:<20} {address}")
+        
+        # Show decision counts
+        decision_counts = {}
+        for listing in listings:
+            decision = listing.decision or "Pending Review"
+            decision_counts[decision] = decision_counts.get(decision, 0) + 1
+        
+        click.echo("\n📈 Decision Counts:")
+        for decision in decision_priority.keys():
+            count = decision_counts.get(decision, 0)
+            click.echo(f"  {decision:<20}: {count:2d}")
+        
+        if dry_run:
+            click.echo("\n🔍 This was a dry run. No changes were made to the sheet.")
+            click.echo("💡 Run without --dry-run to apply the sorting.")
+            return
+        
+        # Confirm before making changes
+        if not confirm_destructive_action("This will reorder all listings in the sheet. Continue?", False):
+            click.echo("❌ Operation cancelled")
+            return
+        
+        # Apply the sorting by rewriting the sheet
+        if sheets_manager.sort_listings_by_decision(worksheet, sorted_listings):
+            click.echo(f"\n✅ Successfully sorted {len(listings)} listings by decision status")
+            click.echo("💡 The sheet now shows listings in priority order:")
+            click.echo("   1. Pending Review")
+            click.echo("   2. Interested") 
+            click.echo("   3. Shortlisted")
+            click.echo("   4. Appointment Scheduled")
+            click.echo("   5. Rejected")
+        else:
+            click.echo("❌ Failed to sort listings")
+    
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}")
+
+
+@click.command()
 @click.option('--email', '-e', required=True, help='Email to share the sheet with')
 @click.option('--sheet-name', default='Oregon Rental Listings', help='Google Sheet name')
 def share(email: str, sheet_name: str):

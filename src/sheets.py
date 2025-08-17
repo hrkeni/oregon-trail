@@ -17,6 +17,7 @@ class GoogleSheetsManager:
     
     Key Features:
     - Automatic notes protection: Notes are never lost during rescraping
+    - Automatic decision protection: Decision field is never lost during rescraping
     - Field-level protection: Manually modified fields are preserved using hash-based detection
     - Smart updates: Only updates fields that haven't been manually modified
     - Hash management: Tracks field changes to prevent accidental data loss
@@ -27,8 +28,14 @@ class GoogleSheetsManager:
     - Empty notes are not protected, allowing future updates
     - Use protect-fields command to manually protect other fields
     
+    Decision Protection:
+    - When you manually set a decision (other than "Pending Review"), it's automatically protected
+    - Decisions are preserved even when using --ignore-hashes flag
+    - Default "Pending Review" decisions are not protected, allowing future updates
+    - Use protect-fields command to manually protect other fields
+    
     Usage:
-    - Normal rescraping preserves all manually modified fields including notes
+    - Normal rescraping preserves all manually modified fields including notes and decisions
     - Use --ignore-hashes only when you want to completely refresh all data
     - Use protect-fields to manually protect specific fields from updates
     """
@@ -63,7 +70,7 @@ class GoogleSheetsManager:
         field_names = [
             'url', 'address', 'price', 'beds', 'baths', 'sqft', 'house_type',
             'description', 'amenities', 'available_date', 'parking', 'utilities',
-            'contact_info', 'appointment_url', 'scraped_at', 'notes'
+            'contact_info', 'appointment_url', 'scraped_at', 'notes', 'decision'
         ]
         
         # Get stored hashes for this URL
@@ -85,6 +92,17 @@ class GoogleSheetsManager:
                 if stored_hash:
                     manual_changes.append(True)
                     logger.debug(f"Preserving notes field for URL: {url} (hash exists)")
+                else:
+                    manual_changes.append(False)
+                continue
+            
+            # Special handling for decision field - always preserve if it was manually set
+            if field_name == 'decision':
+                # If we have a stored hash for decision, it means decision was manually set
+                # Always preserve decision to prevent loss of user data
+                if stored_hash:
+                    manual_changes.append(True)
+                    logger.debug(f"Preserving decision field for URL: {url} (hash exists)")
                 else:
                     manual_changes.append(False)
                 continue
@@ -140,12 +158,12 @@ class GoogleSheetsManager:
         try:
             # Check if headers already exist
             existing_headers = worksheet.row_values(1)
-            if existing_headers and len(existing_headers) >= 16:
+            if existing_headers and len(existing_headers) >= 17:
                 logger.info("Headers already exist in worksheet")
                 return
             
             headers = RentalListing.get_sheet_headers()
-            worksheet.update('A1:P1', [headers])
+            worksheet.update('A1:Q1', [headers])
             logger.info("Set up headers in worksheet")
         except Exception as e:
             logger.error(f"Failed to setup headers: {str(e)}")
@@ -193,7 +211,7 @@ class GoogleSheetsManager:
                 field_names = [
                     'url', 'address', 'price', 'beds', 'baths', 'sqft', 'house_type',
                     'description', 'amenities', 'available_date', 'parking', 'utilities',
-                    'contact_info', 'appointment_url', 'scraped_at', 'notes'
+                    'contact_info', 'appointment_url', 'scraped_at', 'notes', 'decision'
                 ]
                 
                 for i, (is_manual, field_name) in enumerate(zip(manual_changes, field_names)):
@@ -201,6 +219,8 @@ class GoogleSheetsManager:
                         row_data[i] = existing_data[i]
                         if field_name == 'notes':
                             logger.info(f"Preserved notes for {listing.url}: '{existing_data[i]}'")
+                        elif field_name == 'decision':
+                            logger.info(f"Preserved decision for {listing.url}: '{existing_data[i]}'")
                         else:
                             logger.debug(f"Preserved manually modified field '{field_name}': {existing_data[i]}")
                 
@@ -211,6 +231,13 @@ class GoogleSheetsManager:
                     row_data[notes_index] = existing_data[notes_index]
                     logger.warning(f"Prevented loss of notes for {listing.url}: '{existing_data[notes_index]}'")
                 
+                # Special validation: Ensure decision is never lost if it was manually set
+                decision_index = field_names.index('decision')
+                if decision_index < len(existing_data) and existing_data[decision_index] and existing_data[decision_index] != "Pending Review":
+                    # If decision was manually set to something other than default, preserve it
+                    row_data[decision_index] = existing_data[decision_index]
+                    logger.info(f"Preserved manual decision for {listing.url}: '{existing_data[decision_index]}'")
+                
                 # Store new hashes in local database
                 new_hashes = listing.to_hash_row()
                 for i, (field_name, new_hash) in enumerate(zip(field_names, new_hashes)):
@@ -218,7 +245,7 @@ class GoogleSheetsManager:
                         self.cache.set_field_hash(listing.url, field_name, new_hash)
                 
                 # Update existing row (only data columns, no hash columns)
-                worksheet.update(f'A{existing_row}:P{existing_row}', [row_data])
+                worksheet.update(f'A{existing_row}:Q{existing_row}', [row_data])
                 logger.info(f"Updated listing in row {existing_row}: {listing.address}")
                 return True
             else:
@@ -231,14 +258,14 @@ class GoogleSheetsManager:
                 field_names = [
                     'url', 'address', 'price', 'beds', 'baths', 'sqft', 'house_type',
                     'description', 'amenities', 'available_date', 'parking', 'utilities',
-                    'contact_info', 'appointment_url', 'scraped_at', 'notes'
+                    'contact_info', 'appointment_url', 'scraped_at', 'notes', 'decision'
                 ]
                 new_hashes = listing.to_hash_row()
                 for i, (field_name, new_hash) in enumerate(zip(field_names, new_hashes)):
                     if new_hash:  # Only store non-empty hashes
                         self.cache.set_field_hash(listing.url, field_name, new_hash)
                 
-                worksheet.update(f'A{next_row}:P{next_row}', [row_data])
+                worksheet.update(f'A{next_row}:Q{next_row}', [row_data])
                 logger.info(f"Added listing to row {next_row}: {listing.address}")
                 return True
             
@@ -276,7 +303,8 @@ class GoogleSheetsManager:
                         contact_info=row[12] if len(row) > 12 else None,
                         appointment_url=row[13] if len(row) > 13 else None,
                         scraped_at=datetime.fromisoformat(row[14]) if len(row) > 14 and row[14] else None,
-                        notes=row[15] if len(row) > 15 else None
+                        notes=row[15] if len(row) > 15 else None,
+                        decision=row[16] if len(row) > 16 else "Pending Review"
                     )
                     listings.append(listing)
             
@@ -313,6 +341,40 @@ class GoogleSheetsManager:
             
         except Exception as e:
             logger.error(f"Failed to update notes: {str(e)}")
+            return False
+    
+    def update_listing_decision(self, url: str, decision: str, worksheet: gspread.Worksheet) -> bool:
+        """Update decision for a specific listing"""
+        try:
+            # Validate decision value
+            valid_decisions = RentalListing.get_decision_options()
+            if decision not in valid_decisions:
+                logger.error(f"Invalid decision value: {decision}. Valid options: {', '.join(valid_decisions)}")
+                return False
+            
+            all_values = worksheet.get_all_values()
+            
+            for i, row in enumerate(all_values[1:], start=2):  # Skip headers
+                if row[0] == url:  # Match by URL
+                    # Update decision in data column (Q)
+                    worksheet.update(f'Q{i}', decision)
+                    
+                    # Update hash in local database to protect decision from being overwritten
+                    if decision and decision.strip() and decision != "Pending Review":
+                        self.cache.set_field_hash(url, 'decision', decision)
+                        logger.info(f"Updated and protected decision for listing: {url}: {decision}")
+                    else:
+                        # If decision is default or empty, remove the hash to allow future updates
+                        self.cache.clear_specific_field_hashes(url, ['decision'])
+                        logger.info(f"Cleared decision protection for listing: {url}")
+                    
+                    return True
+            
+            logger.warning(f"Listing not found: {url}")
+            return False
+            
+        except Exception as e:
+            logger.error(f"Failed to update decision: {str(e)}")
             return False
     
     def share_sheet(self, email: str, sheet_name: str = "Oregon Rental Listings"):
@@ -358,6 +420,15 @@ class GoogleSheetsManager:
             logger.error(f"Failed to check notes for URL {url}: {str(e)}")
             return False
     
+    def has_decision(self, url: str) -> bool:
+        """Check if a URL has a decision stored"""
+        try:
+            stored_hashes = self.cache.get_all_field_hashes(url)
+            return 'decision' in stored_hashes
+        except Exception as e:
+            logger.error(f"Failed to check decision for URL {url}: {str(e)}")
+            return False
+    
     def rescrape_all_listings(self, worksheet: gspread.Worksheet, scraper, ignore_hashes: bool = False) -> dict:
         """Rescrape all listings from the sheet and return results summary"""
         try:
@@ -375,6 +446,10 @@ class GoogleSheetsManager:
                 has_notes_before = self.has_notes(listing.url)
                 notes_content_before = listing.notes
                 
+                # Check if this listing has a decision before rescraping
+                has_decision_before = self.has_decision(listing.url)
+                decision_content_before = listing.decision
+                
                 # Rescrape the listing
                 new_listing = scraper.scrape_listing(listing.url)
                 
@@ -386,6 +461,11 @@ class GoogleSheetsManager:
                 if has_notes_before and notes_content_before:
                     new_listing.notes = notes_content_before
                     logger.info(f"Preserved existing notes for {listing.url}: '{notes_content_before[:100]}{'...' if len(notes_content_before) > 100 else ''}'")
+                
+                # Special handling for decision: if the listing had a decision before, preserve it
+                if has_decision_before and decision_content_before and decision_content_before != "Pending Review":
+                    new_listing.decision = decision_content_before
+                    logger.info(f"Preserved existing decision for {listing.url}: '{decision_content_before}'")
                 
                 # Update the listing with appropriate hash handling
                 if ignore_hashes:
@@ -407,3 +487,42 @@ class GoogleSheetsManager:
         except Exception as e:
             logger.error(f"Failed to rescrape listings: {str(e)}")
             return {"successful": 0, "failed": 0, "total": 0} 
+    
+    def sort_listings_by_decision(self, worksheet: gspread.Worksheet, sorted_listings: List[RentalListing]) -> bool:
+        """Sort listings by decision status in the worksheet"""
+        try:
+            # Get current headers
+            headers = worksheet.row_values(1)
+            if not headers:
+                logger.error("No headers found in worksheet")
+                return False
+            
+            # Clear all data rows (keep headers)
+            all_values = worksheet.get_all_values()
+            if len(all_values) > 1:
+                # Delete rows from bottom to top to avoid index shifting issues
+                for row_num in range(len(all_values), 1, -1):
+                    worksheet.delete_rows(row_num)
+            
+            # Add sorted listings back to the sheet
+            for i, listing in enumerate(sorted_listings, start=2):
+                row_data = listing.to_sheet_row()
+                worksheet.update(f'A{i}:Q{i}', [row_data])
+                
+                # Store hashes for the sorted listing to maintain protection
+                field_names = [
+                    'url', 'address', 'price', 'beds', 'baths', 'sqft', 'house_type',
+                    'description', 'amenities', 'available_date', 'parking', 'utilities',
+                    'contact_info', 'appointment_url', 'scraped_at', 'notes', 'decision'
+                ]
+                new_hashes = listing.to_hash_row()
+                for j, (field_name, new_hash) in enumerate(zip(field_names, new_hashes)):
+                    if new_hash:  # Only store non-empty hashes
+                        self.cache.set_field_hash(listing.url, field_name, new_hash)
+            
+            logger.info(f"Successfully sorted {len(sorted_listings)} listings by decision status")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to sort listings by decision: {str(e)}")
+            return False 
