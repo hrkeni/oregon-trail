@@ -296,6 +296,102 @@ def sort_by_status(sheet_name: str, dry_run: bool):
 
 
 @click.command()
+@click.option('--sheet-name', default='Oregon Rental Listings', help='Google Sheet name')
+def setup_validation(sheet_name: str):
+    """Set up data validation for the decision column dropdown"""
+    
+    try:
+        sheets_manager, worksheet = get_sheets_manager_and_worksheet(sheet_name)
+        
+        click.echo(f"🔧 Setting up decision column validation for sheet: {sheet_name}")
+        
+        # For now, provide manual setup instructions
+        click.echo("📝 Manual Setup Required:")
+        click.echo("   The decision column dropdown needs to be set up manually in Google Sheets.")
+        click.echo("   Here's how to do it:")
+        click.echo()
+        click.echo("   1. Open your Google Sheet in the browser")
+        click.echo("   2. Select column Q (the Decision column)")
+        click.echo("   3. Right-click and select 'Data validation'")
+        click.echo("   4. Set 'Criteria' to 'List of items'")
+        click.echo("   5. Enter these values (one per line):")
+        
+        decision_options = RentalListing.get_decision_options()
+        for option in decision_options:
+            click.echo(f"      • {option}")
+        
+        click.echo("   6. Check 'Show validation help text'")
+        click.echo("   7. Set help text to: 'Select a decision from the dropdown'")
+        click.echo("   8. Check 'Reject input' for invalid data")
+        click.echo("   9. Click 'Save'")
+        click.echo()
+        click.echo("💡 After setup, users can only select from these predefined options:")
+        for i, option in enumerate(decision_options, 1):
+            click.echo(f"   {i}. {option}")
+        click.echo()
+        click.echo("🔧 Future versions will automate this setup.")
+        
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}")
+
+
+@click.command()
+@click.option('--sheet-name', default='Oregon Rental Listings', help='Google Sheet name')
+@click.option('--force', '-f', is_flag=True, help='Skip confirmation prompt')
+def cleanup_decisions(sheet_name: str, force: bool):
+    """Clean up invalid decision values to ensure dropdown compatibility"""
+    
+    try:
+        sheets_manager, worksheet = get_sheets_manager_and_worksheet(sheet_name)
+        
+        click.echo(f"🧹 Cleaning up invalid decision values in sheet: {sheet_name}")
+        
+        # Get current decision values to show what will be cleaned
+        all_values = worksheet.get_all_values()
+        if len(all_values) <= 1:
+            click.echo("📋 No data rows found in sheet")
+            return
+        
+        valid_decisions = RentalListing.get_decision_options()
+        invalid_decisions = []
+        
+        # Check for invalid decisions
+        for i, row in enumerate(all_values[1:], start=2):
+            if len(row) > 16:
+                current_decision = row[16]
+                if current_decision and current_decision not in valid_decisions:
+                    invalid_decisions.append((i, current_decision))
+        
+        if not invalid_decisions:
+            click.echo("✅ All decision values are valid! No cleanup needed.")
+            return
+        
+        click.echo(f"⚠️  Found {len(invalid_decisions)} invalid decision values:")
+        for row_num, decision in invalid_decisions:
+            click.echo(f"   Row {row_num}: '{decision}' → 'Pending Review'")
+        
+        # Show confirmation prompt unless --force is used
+        if not confirm_destructive_action(f"This will update {len(invalid_decisions)} invalid decision values to 'Pending Review'. Continue?", force):
+            click.echo("❌ Operation cancelled")
+            return
+        
+        # Clean up the invalid decisions
+        result = sheets_manager.cleanup_invalid_decisions(worksheet)
+        
+        if result["cleaned"] > 0:
+            click.echo(f"✅ Successfully cleaned {result['cleaned']} invalid decision values")
+            if result["errors"] > 0:
+                click.echo(f"⚠️  {result['errors']} errors occurred during cleanup")
+        else:
+            click.echo("📋 No invalid decisions were cleaned")
+        
+        click.echo("💡 The decision column now only contains valid dropdown values!")
+        
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}")
+
+
+@click.command()
 @click.option('--email', '-e', required=True, help='Email to share the sheet with')
 @click.option('--sheet-name', default='Oregon Rental Listings', help='Google Sheet name')
 def share(email: str, sheet_name: str):

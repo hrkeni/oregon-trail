@@ -160,14 +160,68 @@ class GoogleSheetsManager:
             existing_headers = worksheet.row_values(1)
             if existing_headers and len(existing_headers) >= 17:
                 logger.info("Headers already exist in worksheet")
+                # Still set up data validation for existing sheets
+                self._setup_decision_validation(worksheet)
                 return
             
             headers = RentalListing.get_sheet_headers()
             worksheet.update('A1:Q1', [headers])
-            logger.info("Set up headers in worksheet")
+            
+            # Set up data validation for the decision column
+            self._setup_decision_validation(worksheet)
+            
+            logger.info("Set up headers and data validation in worksheet")
         except Exception as e:
             logger.error(f"Failed to setup headers: {str(e)}")
             raise
+    
+    def _setup_decision_validation(self, worksheet: gspread.Worksheet):
+        """Set up data validation for the decision column as a dropdown"""
+        try:
+            # Get the decision options from the model
+            decision_options = RentalListing.get_decision_options()
+            
+            # Get the worksheet ID for API calls
+            worksheet_id = worksheet.id
+            spreadsheet_id = worksheet.spreadsheet.id
+            
+            # Access the Google Sheets API service through the gspread client
+            # The client.auth is the Google Auth object that has the service
+            sheets_service = self.client.auth.service.spreadsheets()
+            
+            # Define the data validation rule
+            validation_rule = {
+                'requests': [{
+                    'setDataValidation': {
+                        'range': {
+                            'sheetId': worksheet_id,
+                            'startRowIndex': 1,  # Start from row 2 (after headers)
+                            'startColumnIndex': 16,  # Column Q (0-based index)
+                            'endColumnIndex': 17  # End at column Q
+                        },
+                        'rule': {
+                            'condition': {
+                                'type': 'ONE_OF_LIST',
+                                'values': [{'userEnteredValue': option} for option in decision_options]
+                            },
+                            'showCustomUi': True,
+                            'strict': True
+                        }
+                    }
+                }]
+            }
+            
+            # Apply the data validation
+            sheets_service.batchUpdate(
+                spreadsheetId=spreadsheet_id,
+                body=validation_rule
+            ).execute()
+            
+            logger.info(f"Set up decision column dropdown with options: {', '.join(decision_options)}")
+            
+        except Exception as e:
+            logger.error(f"Failed to setup decision validation: {str(e)}")
+            # Don't raise here as this is not critical for basic functionality
     
     def find_listing_row(self, url: str, worksheet: gspread.Worksheet) -> Optional[int]:
         """Find the row number for a listing by URL"""
@@ -206,6 +260,14 @@ class GoogleSheetsManager:
                 
                 # Convert listing to row data
                 row_data = listing.to_sheet_row()
+                
+                # Validate row data for dropdown compatibility
+                field_names = [
+                    'url', 'address', 'price', 'beds', 'baths', 'sqft', 'house_type',
+                    'description', 'amenities', 'available_date', 'parking', 'utilities',
+                    'contact_info', 'appointment_url', 'scraped_at', 'notes', 'decision'
+                ]
+                row_data = self._validate_row_data_for_dropdown(row_data, field_names)
                 
                 # Preserve manually modified fields
                 field_names = [
@@ -253,6 +315,14 @@ class GoogleSheetsManager:
                 all_values = worksheet.get_all_values()
                 next_row = len(all_values) + 1
                 row_data = listing.to_sheet_row()
+                
+                # Validate row data for dropdown compatibility
+                field_names = [
+                    'url', 'address', 'price', 'beds', 'baths', 'sqft', 'house_type',
+                    'description', 'amenities', 'available_date', 'parking', 'utilities',
+                    'contact_info', 'appointment_url', 'scraped_at', 'notes', 'decision'
+                ]
+                row_data = self._validate_row_data_for_dropdown(row_data, field_names)
                 
                 # Store hashes in local database
                 field_names = [
@@ -352,17 +422,20 @@ class GoogleSheetsManager:
                 logger.error(f"Invalid decision value: {decision}. Valid options: {', '.join(valid_decisions)}")
                 return False
             
+            # Normalize the decision value for consistency
+            normalized_decision = self._validate_decision_value(decision)
+            
             all_values = worksheet.get_all_values()
             
             for i, row in enumerate(all_values[1:], start=2):  # Skip headers
                 if row[0] == url:  # Match by URL
                     # Update decision in data column (Q)
-                    worksheet.update(f'Q{i}', decision)
+                    worksheet.update(f'Q{i}', normalized_decision)
                     
                     # Update hash in local database to protect decision from being overwritten
-                    if decision and decision.strip() and decision != "Pending Review":
-                        self.cache.set_field_hash(url, 'decision', decision)
-                        logger.info(f"Updated and protected decision for listing: {url}: {decision}")
+                    if normalized_decision and normalized_decision.strip() and normalized_decision != "Pending Review":
+                        self.cache.set_field_hash(url, 'decision', normalized_decision)
+                        logger.info(f"Updated and protected decision for listing: {url}: {normalized_decision}")
                     else:
                         # If decision is default or empty, remove the hash to allow future updates
                         self.cache.clear_specific_field_hashes(url, ['decision'])
@@ -467,6 +540,9 @@ class GoogleSheetsManager:
                     new_listing.decision = decision_content_before
                     logger.info(f"Preserved existing decision for {listing.url}: '{decision_content_before}'")
                 
+                # Validate the new listing for dropdown compatibility
+                new_listing = self._validate_listing_for_dropdown(new_listing)
+                
                 # Update the listing with appropriate hash handling
                 if ignore_hashes:
                     # Clear hashes to force update all fields
@@ -506,7 +582,10 @@ class GoogleSheetsManager:
             
             # Add sorted listings back to the sheet
             for i, listing in enumerate(sorted_listings, start=2):
-                row_data = listing.to_sheet_row()
+                # Validate listing for dropdown compatibility
+                validated_listing = self._validate_listing_for_dropdown(listing)
+                
+                row_data = validated_listing.to_sheet_row()
                 worksheet.update(f'A{i}:Q{i}', [row_data])
                 
                 # Store hashes for the sorted listing to maintain protection
@@ -515,10 +594,10 @@ class GoogleSheetsManager:
                     'description', 'amenities', 'available_date', 'parking', 'utilities',
                     'contact_info', 'appointment_url', 'scraped_at', 'notes', 'decision'
                 ]
-                new_hashes = listing.to_hash_row()
+                new_hashes = validated_listing.to_hash_row()
                 for j, (field_name, new_hash) in enumerate(zip(field_names, new_hashes)):
                     if new_hash:  # Only store non-empty hashes
-                        self.cache.set_field_hash(listing.url, field_name, new_hash)
+                        self.cache.set_field_hash(validated_listing.url, field_name, new_hash)
             
             logger.info(f"Successfully sorted {len(sorted_listings)} listings by decision status")
             return True
@@ -526,3 +605,96 @@ class GoogleSheetsManager:
         except Exception as e:
             logger.error(f"Failed to sort listings by decision: {str(e)}")
             return False 
+    
+    def _validate_decision_value(self, decision: str) -> str:
+        """Validate and normalize decision value for dropdown compatibility"""
+        if not decision:
+            return "Pending Review"
+        
+        # Get valid decision options
+        valid_decisions = RentalListing.get_decision_options()
+        
+        # Check if the decision is valid
+        if decision in valid_decisions:
+            return decision
+        
+        # If invalid, log warning and return default
+        logger.warning(f"Invalid decision value '{decision}' found. Using default 'Pending Review'")
+        return "Pending Review"
+    
+    def _validate_listing_for_dropdown(self, listing: RentalListing) -> RentalListing:
+        """Validate listing data to ensure dropdown compatibility"""
+        # Create a copy to avoid modifying the original
+        validated_listing = RentalListing(
+            url=listing.url,
+            address=listing.address,
+            price=listing.price,
+            beds=listing.beds,
+            baths=listing.baths,
+            sqft=listing.sqft,
+            house_type=listing.house_type,
+            description=listing.description,
+            amenities=listing.amenities,
+            available_date=listing.available_date,
+            parking=listing.parking,
+            utilities=listing.utilities,
+            contact_info=listing.contact_info,
+            appointment_url=listing.appointment_url,
+            scraped_at=listing.scraped_at,
+            notes=listing.notes,
+            decision=self._validate_decision_value(listing.decision)
+        )
+        return validated_listing
+    
+    def _validate_row_data_for_dropdown(self, row_data: List[str], field_names: List[str]) -> List[str]:
+        """Validate row data to ensure dropdown compatibility"""
+        validated_data = row_data.copy()
+        
+        # Find the decision field index
+        try:
+            decision_index = field_names.index('decision')
+            if decision_index < len(validated_data):
+                validated_data[decision_index] = self._validate_decision_value(validated_data[decision_index])
+        except ValueError:
+            # Decision field not found, skip validation
+            pass
+        
+        return validated_data 
+    
+    def cleanup_invalid_decisions(self, worksheet: gspread.Worksheet) -> dict:
+        """Clean up invalid decision values in the sheet to ensure dropdown compatibility"""
+        try:
+            all_values = worksheet.get_all_values()
+            if len(all_values) <= 1:  # Only headers
+                return {"cleaned": 0, "total": 0, "errors": 0}
+            
+            valid_decisions = RentalListing.get_decision_options()
+            cleaned_count = 0
+            error_count = 0
+            
+            # Start from row 2 (after headers)
+            for i, row in enumerate(all_values[1:], start=2):
+                if len(row) > 16:  # Ensure decision column exists
+                    current_decision = row[16]  # Column Q (0-based index 16)
+                    
+                    # Check if decision is invalid
+                    if current_decision and current_decision not in valid_decisions:
+                        try:
+                            # Update to default value
+                            worksheet.update(f'Q{i}', "Pending Review")
+                            cleaned_count += 1
+                            logger.info(f"Cleaned invalid decision '{current_decision}' in row {i} to 'Pending Review'")
+                        except Exception as e:
+                            error_count += 1
+                            logger.error(f"Failed to clean decision in row {i}: {str(e)}")
+            
+            logger.info(f"Cleaned {cleaned_count} invalid decision values")
+            return {
+                "cleaned": cleaned_count,
+                "total": len(all_values) - 1,
+                "errors": error_count
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to cleanup invalid decisions: {str(e)}")
+            return {"cleaned": 0, "total": 0, "errors": 0} 

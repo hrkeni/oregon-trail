@@ -131,6 +131,33 @@ python main.py sort-by-status --dry-run
 python main.py sort-by-status
 ```
 
+### Setup Data Validation
+
+```bash
+# Get instructions for setting up decision column dropdown
+python main.py setup-validation
+
+# Use a different sheet name
+python main.py setup-validation --sheet-name "My Rentals"
+```
+
+**Note**: This command currently provides step-by-step manual setup instructions. Future versions will automate the dropdown creation.
+
+### Clean Up Invalid Decisions
+
+```bash
+# Clean up invalid decision values to ensure dropdown compatibility
+python main.py cleanup-decisions
+
+# Skip confirmation prompt
+python main.py cleanup-decisions --force
+
+# Use a different sheet name
+python main.py cleanup-decisions --sheet-name "My Rentals"
+```
+
+**Note**: This command finds and fixes any decision values that don't match the dropdown options.
+
 ### Share Sheet
 
 ```bash
@@ -211,6 +238,8 @@ Each listing includes:
 - **Notes**: Your personal notes (preserved during updates)
 - **Decision**: Your decision on the property (preserved during updates)
   - **Valid options**: "Pending Review" (default), "Interested", "Shortlisted", "Rejected", "Appointment Scheduled"
+  - **Input method**: Dropdown selection (set up with `setup-validation` command)
+  - **Data integrity**: Automatically validated during rescraping and sorting operations
 
 ## Sorting Priority
 
@@ -223,6 +252,30 @@ The `sort-by-status` command organizes listings by decision status in the follow
 5. **Rejected** - Properties you've decided against
 
 This sorting ensures that your highest-priority listings (those requiring action) appear at the top of the sheet.
+
+## Dropdown Compatibility & Data Integrity
+
+The decision column now enforces dropdown validation to ensure data consistency:
+
+### **Automatic Validation**
+
+- **Rescraping**: Decision values are automatically validated before writing to the sheet
+- **Sorting**: All decision values are validated during sort operations
+- **Updates**: Decision updates are normalized to valid dropdown options
+- **Data Protection**: Invalid values are automatically converted to "Pending Review"
+
+### **Validation Methods**
+
+- **`setup-validation`**: Sets up the dropdown in Google Sheets
+- **`cleanup-decisions`**: Finds and fixes any existing invalid decision values
+- **Real-time Validation**: All data operations validate decisions before writing
+
+### **Benefits**
+
+- **Data Consistency**: Only valid decision values can exist in the sheet
+- **Reliable Sorting**: The `sort-by-status` command works with clean, valid data
+- **User Experience**: Clear dropdown options prevent confusion and typos
+- **Professional Quality**: Consistent data format for sharing and collaboration
 
 ## Legal & Ethical Considerations
 
@@ -267,7 +320,7 @@ oregon-trail/
 │   │   ├── __init__.py        # Main CLI entry point
 │   │   ├── cli_utils.py       # Shared utility functions for CLI commands
 │   │   └── commands/          # Command implementations organized by concern
-│   │       ├── core.py        # Core rental listing commands (add, list, update-notes, update-decision, sort-by-status, share, clear, rescrape)
+│   │       ├── core.py        # Core rental listing commands (add, list, update-notes, update-decision, sort-by-status, setup-validation, cleanup-decisions, share, clear, rescrape)
 │   │       ├── data_protection.py # Field protection commands (notes-status, protection-status, protect-fields, etc.)
 │   │       ├── cache_management.py # Cache management commands (cache-stats, cache-clear)
 │   │       └── setup.py       # Setup and help commands

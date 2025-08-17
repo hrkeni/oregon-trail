@@ -42,6 +42,8 @@ def help():
     click.echo("  update-notes           - Update notes for a specific listing")
     click.echo("  update-decision        - Update decision for a specific listing")
     click.echo("  sort-by-status         - Sort listings by decision status")
+    click.echo("  setup-validation       - Set up decision column dropdown")
+    click.echo("  cleanup-decisions      - Clean up invalid decision values")
     click.echo("  share                  - Share the sheet with someone")
     click.echo("  clear                  - Clear all listings from the sheet")
     click.echo("  rescrape               - Rescrape all URLs from the sheet")

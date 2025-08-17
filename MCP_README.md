@@ -33,6 +33,7 @@ The `mcp.json` configuration file sets up a dbhub MCP server that provides acces
   - `field_hash`: MD5 hash of the field value (8 characters)
   - `last_updated`: When the hash was last updated
 - **Protected Fields**: url, address, price, beds, baths, sqft, house_type, description, amenities, available_date, parking, utilities, contact_info, appointment_url, scraped_at, notes, decision
+- **Decision Field**: Uses dropdown validation with predefined options: "Pending Review", "Interested", "Shortlisted", "Rejected", "Appointment Scheduled"
 
 #### 3. `page_cache` Table (Legacy Cache - Not Currently Used)
 
@@ -132,6 +133,30 @@ FROM field_hashes
 WHERE julianday('now') - julianday(last_updated) < 1
 ORDER BY last_updated DESC;
 ```
+
+### Decision Column Dropdown Setup
+
+The decision column uses data validation to ensure only valid options are selected:
+
+```sql
+-- Check which decision values are currently in use
+SELECT decision, COUNT(*) as count 
+FROM (
+    SELECT DISTINCT url, decision 
+    FROM field_hashes 
+    WHERE field_name = 'decision'
+) 
+GROUP BY decision 
+ORDER BY count DESC;
+
+-- Find any invalid decision values (should be empty if validation is working)
+SELECT url, decision 
+FROM field_hashes 
+WHERE field_name = 'decision' 
+AND decision NOT IN ('Pending Review', 'Interested', 'Shortlisted', 'Rejected', 'Appointment Scheduled');
+```
+
+**Setup Command**: Use `python main.py setup-validation` to set up the dropdown for existing sheets.
 
 ## Benefits of MCP Integration
 
