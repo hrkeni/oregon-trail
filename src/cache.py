@@ -176,4 +176,21 @@ class WebPageCache:
                 conn.execute("DELETE FROM field_hashes WHERE url = ?", (url,))
                 conn.commit()
         except Exception as e:
-            logger.error(f"Failed to clear field hashes: {str(e)}") 
+            logger.error(f"Failed to clear field hashes: {str(e)}")
+    
+    def clear_specific_field_hashes(self, url: str, field_names: list):
+        """Clear specific field hashes for a URL"""
+        try:
+            if not field_names:
+                return
+            
+            placeholders = ','.join(['?' for _ in field_names])
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(f"""
+                    DELETE FROM field_hashes 
+                    WHERE url = ? AND field_name IN ({placeholders})
+                """, [url] + field_names)
+                conn.commit()
+                logger.debug(f"Cleared field hashes for {url}: {field_names}")
+        except Exception as e:
+            logger.error(f"Failed to clear specific field hashes: {str(e)}") 

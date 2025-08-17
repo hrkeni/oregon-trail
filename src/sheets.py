@@ -12,7 +12,26 @@ logger = logging.getLogger(__name__)
 
 
 class GoogleSheetsManager:
-    """Manages Google Sheets integration for rental listings"""
+    """
+    Manages Google Sheets integration for rental listings with smart data protection.
+    
+    Key Features:
+    - Automatic notes protection: Notes are never lost during rescraping
+    - Field-level protection: Manually modified fields are preserved using hash-based detection
+    - Smart updates: Only updates fields that haven't been manually modified
+    - Hash management: Tracks field changes to prevent accidental data loss
+    
+    Notes Protection:
+    - When you add notes to a listing, they are automatically protected
+    - Notes are preserved even when using --ignore-hashes flag
+    - Empty notes are not protected, allowing future updates
+    - Use protect-fields command to manually protect other fields
+    
+    Usage:
+    - Normal rescraping preserves all manually modified fields including notes
+    - Use --ignore-hashes only when you want to completely refresh all data
+    - Use protect-fields to manually protect specific fields from updates
+    """
     
     def __init__(self, credentials_file: str = "credentials.json"):
         """Initialize with service account credentials"""
@@ -59,7 +78,18 @@ class GoogleSheetsManager:
             stored_hash = stored_hashes.get(field_name)
             new_hash = new_hashes[i] if i < len(new_hashes) else ""
             
-            # If we have a stored hash and it doesn't match the new hash, field was manually modified
+            # Special handling for notes field - always preserve if it had content
+            if field_name == 'notes':
+                # If we have a stored hash for notes, it means notes were manually set
+                # Always preserve notes to prevent loss of user data
+                if stored_hash:
+                    manual_changes.append(True)
+                    logger.debug(f"Preserving notes field for URL: {url} (hash exists)")
+                else:
+                    manual_changes.append(False)
+                continue
+            
+            # For other fields, use hash comparison to detect manual changes
             if stored_hash and stored_hash != new_hash:
                 manual_changes.append(True)
                 logger.debug(f"Detected manual change in field '{field_name}' for URL: {url}")
@@ -169,7 +199,17 @@ class GoogleSheetsManager:
                 for i, (is_manual, field_name) in enumerate(zip(manual_changes, field_names)):
                     if is_manual and i < len(existing_data):
                         row_data[i] = existing_data[i]
-                        logger.debug(f"Preserved manually modified field '{field_name}': {existing_data[i]}")
+                        if field_name == 'notes':
+                            logger.info(f"Preserved notes for {listing.url}: '{existing_data[i]}'")
+                        else:
+                            logger.debug(f"Preserved manually modified field '{field_name}': {existing_data[i]}")
+                
+                # Special validation: Ensure notes are never lost if they existed before
+                notes_index = field_names.index('notes')
+                if notes_index < len(existing_data) and existing_data[notes_index] and not row_data[notes_index]:
+                    # If notes existed but are now empty in new data, preserve the old notes
+                    row_data[notes_index] = existing_data[notes_index]
+                    logger.warning(f"Prevented loss of notes for {listing.url}: '{existing_data[notes_index]}'")
                 
                 # Store new hashes in local database
                 new_hashes = listing.to_hash_row()
@@ -256,10 +296,16 @@ class GoogleSheetsManager:
                     # Update notes in data column (P)
                     worksheet.update(f'P{i}', notes)
                     
-                    # Update hash in local database
-                    self.cache.set_field_hash(url, 'notes', notes)
+                    # Update hash in local database to protect notes from being overwritten
+                    if notes and notes.strip():  # Only hash non-empty notes
+                        self.cache.set_field_hash(url, 'notes', notes)
+                        logger.info(f"Updated and protected notes for listing: {url}")
+                        logger.debug(f"Notes content: '{notes[:100]}{'...' if len(notes) > 100 else ''}'")
+                    else:
+                        # If notes are empty, remove the hash to allow future updates
+                        self.cache.clear_specific_field_hashes(url, ['notes'])
+                        logger.info(f"Cleared notes for listing: {url}")
                     
-                    logger.info(f"Updated notes for listing: {url}")
                     return True
             
             logger.warning(f"Listing not found: {url}")
@@ -303,6 +349,15 @@ class GoogleSheetsManager:
             logger.error(f"Failed to clear listings: {str(e)}")
             return False
     
+    def has_notes(self, url: str) -> bool:
+        """Check if a URL has notes stored"""
+        try:
+            stored_hashes = self.cache.get_all_field_hashes(url)
+            return 'notes' in stored_hashes
+        except Exception as e:
+            logger.error(f"Failed to check notes for URL {url}: {str(e)}")
+            return False
+    
     def rescrape_all_listings(self, worksheet: gspread.Worksheet, scraper, ignore_hashes: bool = False) -> dict:
         """Rescrape all listings from the sheet and return results summary"""
         try:
@@ -316,6 +371,10 @@ class GoogleSheetsManager:
             failed = 0
             
             for listing in listings:
+                # Check if this listing has notes before rescraping
+                has_notes_before = self.has_notes(listing.url)
+                notes_content_before = listing.notes
+                
                 # Rescrape the listing
                 new_listing = scraper.scrape_listing(listing.url)
                 
@@ -323,11 +382,17 @@ class GoogleSheetsManager:
                     failed += 1
                     continue
                 
+                # Special handling for notes: if the listing had notes before, preserve them
+                if has_notes_before and notes_content_before:
+                    new_listing.notes = notes_content_before
+                    logger.info(f"Preserved existing notes for {listing.url}: '{notes_content_before[:100]}{'...' if len(notes_content_before) > 100 else ''}'")
+                
                 # Update the listing with appropriate hash handling
                 if ignore_hashes:
                     # Clear hashes to force update all fields
                     self.cache.clear_field_hashes(listing.url)
                     reset_hashes = True
+                    logger.info(f"Force updating all fields for {listing.url} (ignore_hashes=True)")
                 else:
                     # Honor existing hashing rules
                     reset_hashes = False

@@ -333,10 +333,10 @@ def reset_hashes(url: str, sheet_name: str):
 
 @cli.command()
 @click.option('--sheet-name', default='Oregon Rental Listings', help='Google Sheet name')
-@click.option('--ignore-hashes', '-i', is_flag=True, help='Ignore hashing rules and update all fields')
+@click.option('--ignore-hashes', '-i', is_flag=True, help='Ignore hashing rules and update all fields (WARNING: This will overwrite notes!)')
 @click.option('--force', '-f', is_flag=True, help='Skip confirmation prompt')
 def rescrape(sheet_name: str, ignore_hashes: bool, force: bool):
-    """Rescrape all URLs from the sheet"""
+    """Rescrape all URLs from the sheet with smart notes protection"""
     try:
         sheets_manager = GoogleSheetsManager()
         worksheet = sheets_manager.create_or_get_sheet(sheet_name)
@@ -353,13 +353,22 @@ def rescrape(sheet_name: str, ignore_hashes: bool, force: bool):
         
         if not force:
             if ignore_hashes:
-                click.echo("⚠️  This will update ALL fields, ignoring manual edits")
+                click.echo("⚠️  WARNING: Using --ignore-hashes will overwrite ALL fields!")
+                click.echo("   This includes any notes you've added to listings!")
+                click.echo("   Are you absolutely sure you want to continue?")
             else:
                 click.echo("⚠️  This will update fields while preserving manual edits")
+                click.echo("   ✅ Notes will be preserved automatically")
             
             if not click.confirm("Are you sure you want to continue?"):
                 click.echo("❌ Operation cancelled")
                 return
+        
+        # Check how many listings have notes that will be preserved
+        if not ignore_hashes:
+            listings_with_notes = sum(1 for listing in listings if sheets_manager.has_notes(listing.url))
+            if listings_with_notes > 0:
+                click.echo(f"📝 {listings_with_notes} listing(s) have notes that will be preserved")
         
         # Use the sheets manager to handle the rescraping logic
         results = sheets_manager.rescrape_all_listings(worksheet, scraper, ignore_hashes)
@@ -425,6 +434,243 @@ def setup():
     click.echo("7. Place 'credentials.json' in the project root directory")
     click.echo()
     click.echo("✅ You're ready to use the app!")
+
+
+@cli.command()
+@click.option('--sheet-name', default='Oregon Rental Listings', help='Google Sheet name')
+def notes_status(sheet_name: str):
+    """Show which listings have notes that will be preserved during rescraping"""
+    try:
+        sheets_manager = GoogleSheetsManager()
+        worksheet = sheets_manager.create_or_get_sheet(sheet_name)
+        listings = sheets_manager.get_all_listings(worksheet)
+        
+        if not listings:
+            click.echo("📋 No listings found in the sheet")
+            return
+        
+        # Check which listings have notes (from the actual sheet data, not just cache)
+        listings_with_notes = []
+        for listing in listings:
+            if listing.notes and listing.notes.strip():  # Check if notes exist in the sheet
+                listings_with_notes.append(listing)
+        
+        if not listings_with_notes:
+            click.echo("📝 No listings have notes in the sheet")
+            click.echo("💡 Add notes using: python main.py update-notes --url <URL> --notes <your notes>")
+            click.echo("💡 Or manually add notes directly in the Google Sheet")
+            return
+        
+        click.echo(f"📝 Found {len(listings_with_notes)} listing(s) with notes:")
+        click.echo("=" * 80)
+        
+        for i, listing in enumerate(listings_with_notes, 1):
+            click.echo(f"{i}. {listing.address}")
+            click.echo(f"   URL: {listing.url}")
+            click.echo(f"   Notes: {listing.notes}")
+            click.echo()
+        
+        click.echo("✅ These notes will be automatically preserved during rescraping")
+        click.echo("💡 Use '--ignore-hashes' flag to force overwrite all fields")
+        
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}")
+
+
+@cli.command()
+@click.option('--sheet-name', default='Oregon Rental Listings', help='Google Sheet name')
+def protection_status(sheet_name: str):
+    """Show which fields are protected from overwriting for each listing"""
+    try:
+        sheets_manager = GoogleSheetsManager()
+        worksheet = sheets_manager.create_or_get_sheet(sheet_name)
+        listings = sheets_manager.get_all_listings(worksheet)
+        
+        if not listings:
+            click.echo("📋 No listings found in the sheet")
+            return
+        
+        click.echo(f"🛡️  Protection Status for {len(listings)} listing(s):")
+        click.echo("=" * 100)
+        
+        for i, listing in enumerate(listings, 1):
+            click.echo(f"{i}. {listing.address}")
+            click.echo(f"   URL: {listing.url}")
+            
+            # Check which fields are protected
+            try:
+                stored_hashes = sheets_manager.cache.get_all_field_hashes(listing.url)
+                if stored_hashes:
+                    protected_fields = list(stored_hashes.keys())
+                    click.echo(f"   Protected fields: {', '.join(protected_fields)}")
+                    
+                    # Show notes specifically if they exist
+                    if listing.notes and listing.notes.strip():
+                        click.echo(f"   Notes: {listing.notes}")
+                else:
+                    click.echo("   No fields protected (all fields will be updated on rescrape)")
+            except Exception as e:
+                click.echo(f"   Error checking protection: {str(e)}")
+            
+            click.echo()
+        
+        click.echo("💡 Protected fields will be preserved during rescraping")
+        click.echo("💡 Use '--ignore-hashes' flag to force overwrite all fields")
+        
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}")
+
+
+@cli.command()
+@click.option('--url', '-u', required=True, help='URL of the listing to protect')
+@click.option('--fields', '-f', required=True, help='Comma-separated list of fields to protect (e.g., "price,beds,notes")')
+@click.option('--sheet-name', default='Oregon Rental Listings', help='Google Sheet name')
+def protect_fields(url: str, fields: str, sheet_name: str):
+    """Manually protect specific fields for a listing from being overwritten during rescraping"""
+    try:
+        sheets_manager = GoogleSheetsManager()
+        worksheet = sheets_manager.create_or_get_sheet(sheet_name)
+        
+        # Find the listing
+        existing_row = sheets_manager.find_listing_row(url, worksheet)
+        if not existing_row:
+            click.echo(f"❌ Listing not found: {url}")
+            return
+        
+        # Get current listing data
+        all_values = worksheet.get_all_values()
+        existing_data = all_values[existing_row - 1]  # Convert to 0-based index
+        
+        # Parse field names
+        field_names = [
+            'url', 'address', 'price', 'beds', 'baths', 'sqft', 'house_type',
+            'description', 'amenities', 'available_date', 'parking', 'utilities',
+            'contact_info', 'appointment_url', 'scraped_at', 'notes'
+        ]
+        
+        fields_to_protect = [f.strip().lower() for f in fields.split(',')]
+        valid_fields = []
+        
+        for field in fields_to_protect:
+            if field in field_names:
+                valid_fields.append(field)
+            else:
+                click.echo(f"⚠️  Warning: '{field}' is not a valid field name")
+        
+        if not valid_fields:
+            click.echo("❌ No valid fields to protect")
+            return
+        
+        # Protect the specified fields by setting their hashes
+        for field in valid_fields:
+            field_index = field_names.index(field)
+            if field_index < len(existing_data):
+                field_value = existing_data[field_index]
+                if field_value:  # Only protect non-empty fields
+                    sheets_manager.cache.set_field_hash(url, field, field_value)
+                    click.echo(f"✅ Protected field '{field}': '{field_value[:50]}{'...' if len(field_value) > 50 else ''}'")
+                else:
+                    click.echo(f"⚠️  Field '{field}' is empty, skipping protection")
+        
+        click.echo(f"🛡️  Protected {len(valid_fields)} field(s) for listing: {url}")
+        click.echo("💡 These fields will now be preserved during rescraping")
+        
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}")
+
+
+@cli.command()
+@click.option('--url', '-u', required=True, help='URL of the listing to unprotect')
+@click.option('--fields', '-f', required=True, help='Comma-separated list of fields to unprotect (e.g., "price,beds,notes")')
+@click.option('--sheet-name', default='Oregon Rental Listings', help='Google Sheet name')
+def unprotect_fields(url: str, fields: str, sheet_name: str):
+    """Remove protection from specific fields for a listing, allowing them to be updated during rescraping"""
+    try:
+        sheets_manager = GoogleSheetsManager()
+        worksheet = sheets_manager.create_or_get_sheet(sheet_name)
+        
+        # Find the listing
+        existing_row = sheets_manager.find_listing_row(url, worksheet)
+        if not existing_row:
+            click.echo(f"❌ Listing not found: {url}")
+            return
+        
+        # Parse field names
+        field_names = [
+            'url', 'address', 'price', 'beds', 'baths', 'sqft', 'house_type',
+            'description', 'amenities', 'available_date', 'parking', 'utilities',
+            'contact_info', 'appointment_url', 'scraped_at', 'notes'
+        ]
+        
+        fields_to_unprotect = [f.strip().lower() for f in fields.split(',')]
+        valid_fields = []
+        
+        for field in fields_to_unprotect:
+            if field in field_names:
+                valid_fields.append(field)
+            else:
+                click.echo(f"⚠️  Warning: '{field}' is not a valid field name")
+        
+        if not valid_fields:
+            click.echo("❌ No valid fields to unprotect")
+            return
+        
+        # Check which fields are currently protected
+        stored_hashes = sheets_manager.cache.get_all_field_hashes(url)
+        currently_protected = [f for f in valid_fields if f in stored_hashes]
+        
+        if not currently_protected:
+            click.echo(f"ℹ️  No specified fields are currently protected for: {url}")
+            return
+        
+        # Unprotect the specified fields by removing their hashes
+        for field in currently_protected:
+            sheets_manager.cache.clear_specific_field_hashes(url, [field])
+            click.echo(f"✅ Unprotected field '{field}'")
+        
+        click.echo(f"🔓 Unprotected {len(currently_protected)} field(s) for listing: {url}")
+        click.echo("💡 These fields will now be updated during rescraping")
+        
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}")
+
+
+@cli.command()
+def help():
+    """Show detailed help for all available commands"""
+    click.echo("🔧 Oregon Trail - Rental Listing Summarizer")
+    click.echo("=" * 50)
+    click.echo()
+    click.echo("📋 CORE COMMANDS:")
+    click.echo("  add                    - Add rental listings from URLs")
+    click.echo("  list                   - Show all listings in the sheet")
+    click.echo("  update-notes           - Update notes for a specific listing")
+    click.echo("  share                  - Share the sheet with someone")
+    click.echo("  clear                  - Clear all listings from the sheet")
+    click.echo("  rescrape               - Rescrape all URLs from the sheet")
+    click.echo()
+    click.echo("🛡️  DATA PROTECTION COMMANDS:")
+    click.echo("  notes-status           - Show which listings have notes")
+    click.echo("  protection-status      - Show which fields are protected")
+    click.echo("  protect-fields         - Manually protect specific fields")
+    click.echo("  unprotect-fields       - Remove protection from specific fields")
+    click.echo("  reset-hashes           - Reset field hashes for a listing")
+    click.echo()
+    click.echo("🗄️  CACHE MANAGEMENT:")
+    click.echo("  cache-stats            - Show cache statistics")
+    click.echo("  cache-clear            - Clear expired cache entries")
+    click.echo()
+    click.echo("⚙️  SETUP:")
+    click.echo("  setup                  - Google Sheets API setup instructions")
+    click.echo()
+    click.echo("💡 NOTES PROTECTION:")
+    click.echo("  • Notes are automatically protected when you add them")
+    click.echo("  • Protected fields are preserved during rescraping")
+    click.echo("  • Use --ignore-hashes to force update all fields")
+    click.echo("  • Use --reset-hashes to remove protection from a listing")
+    click.echo()
+    click.echo("📖 For detailed help on any command:")
+    click.echo("  python main.py <command> --help")
 
 
 if __name__ == '__main__':
