@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """
-Oregon Trail - Zillow Rental Listing Summarizer
+Oregon Trail - Rental Listing Summarizer
 
-A simple CLI tool to scrape Zillow rental listings and save them to a Google Sheet
-for easy comparison and review.
+A CLI tool to scrape rental listings and save them to Google Sheets for easy comparison and review.
 """
 
 from src.cli import cli

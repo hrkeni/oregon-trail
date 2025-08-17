@@ -1,4 +1,4 @@
-# Oregon Trail - Zillow Rental Listing Summarizer
+# Oregon Trail - Rental Listing Summarizer
 
 > **⚠️ PERSONAL USE ONLY**  
 > This tool is designed for personal use only. The author assumes no liability for any other usage of this software. Use at your own risk and in compliance with applicable laws and website terms of service.
@@ -6,7 +6,7 @@
 > **🤖 AI-GENERATED CODE**  
 > A large portion of this codebase was written by AI using Cursor. This is a personal development tool and should not be used as a reference for production systems.
 
-A simple CLI tool to scrape Zillow rental listings and save them to a Google Sheet for easy comparison and review.
+A simple CLI tool to scrape rental listings from multiple sources and save them to a Google Sheet for easy comparison and review.
 
 ## Features
 
@@ -17,8 +17,9 @@ A simple CLI tool to scrape Zillow rental listings and save them to a Google She
 - 🗑️ **Data Management**: Clear all listings with confirmation prompts
 - 💾 **Smart Caching**: SQLite-based cache to avoid crawling limits and improve performance
 - 👥 **Collaboration**: Share the sheet with your partner for joint review
-- 📋 **CLI Interface**: Easy-to-use command line interface
+- 📋 **CLI Interface**: Easy-to-use command line interface with organized command structure
 - 🔒 **Type Safety**: Full type hints for reliable code
+- 🏗️ **Modular Architecture**: Well-organized codebase with separation of concerns
 
 ## Quick Start
 
@@ -45,16 +46,10 @@ Follow the instructions to:
 
 ### 3. Add Your First Listing
 
-**Scrape from Zillow URL:**
+**Scrape from a rental listing URL:**
 
 ```bash
 python main.py add --url "https://www.zillow.com/homedetails/..."
-```
-
-**Manual entry:**
-
-```bash
-python main.py add --manual
 ```
 
 **Share with your partner:**
@@ -105,7 +100,11 @@ https://hotpads.com/...
 ### View All Listings
 
 ```bash
+# Show table view
 python main.py list
+
+# Show detailed view with descriptions and amenities
+python main.py list --detailed
 ```
 
 ### Update Notes
@@ -130,6 +129,25 @@ python main.py clear
 python main.py clear --force
 ```
 
+### Data Protection & Field Management
+
+```bash
+# Show which listings have notes
+python main.py notes-status
+
+# Show which fields are protected from overwriting
+python main.py protection-status
+
+# Manually protect specific fields
+python main.py protect-fields --url "https://..." --fields "price,beds,notes"
+
+# Remove protection from specific fields
+python main.py unprotect-fields --url "https://..." --fields "price,beds"
+
+# Reset hashes for a specific listing (allows force-updating all fields)
+python main.py reset-hashes --url "https://..."
+```
+
 ### Cache Management
 
 ```bash
@@ -141,21 +159,16 @@ python main.py cache-clear
 
 # Clear cache entries older than 48 hours
 python main.py cache-clear --max-age-hours 48
+```
 
-### Hash Management
+### Help & Setup
 
 ```bash
-# Reset hashes for a specific listing (allows force-updating all fields)
-python main.py reset-hashes --url "https://..."
+# Show detailed help for all commands
+python main.py help
 
-# Show hash statistics
-python main.py cache-stats
-
-# Rescrape all URLs from the sheet (preserve manual edits)
-python main.py rescrape
-
-# Rescrape all URLs from the sheet (ignore manual edits)
-python main.py rescrape --ignore-hashes
+# Show setup instructions
+python main.py setup
 ```
 
 ## Data Structure
@@ -198,13 +211,13 @@ Each listing includes:
 
 ### Scraping Issues
 
-1. Zillow may change their website structure
+1. Rental sites may change their website structure
 2. Some listings might not be accessible
 3. Use manual entry as a fallback
 
 ### Rate Limiting
 
-The scraper includes a 1-second delay between requests to be respectful to Zillow's servers.
+The scraper includes delays between requests to be respectful to website servers.
 
 ## Development
 
@@ -214,33 +227,59 @@ The scraper includes a 1-second delay between requests to be respectful to Zillo
 oregon-trail/
 ├── src/
 │   ├── __init__.py
-│   ├── models.py          # Data models
-│   ├── scraper.py         # Main scraper using data sources
-│   ├── sheets.py          # Google Sheets integration
-│   ├── cli.py            # Command line interface
-│   └── data_sources/     # Modular data source architecture
-│       ├── base.py           # Abstract base class
-│       ├── scraper_base.py   # Base class for scrapers
-│       ├── api_base.py       # Base class for APIs
-│       ├── factory.py        # Data source factory
-│       ├── trulia.py         # Trulia scraper
-│       ├── zillow.py         # Zillow scraper
-│       ├── rent_com.py       # Rent.com scraper
-│       ├── apartments_com.py # Apartments.com scraper
-│       ├── craigslist.py     # Craigslist scraper
-│       ├── redfin.py         # Redfin scraper
-│       └── example_api.py    # Example API source
-├── main.py               # Entry point
-├── requirements.txt      # Dependencies
+│   ├── models.py              # Data models for rental listings
+│   ├── scraper.py             # Main scraper using data sources
+│   ├── sheets.py              # Google Sheets integration with smart data protection
+│   ├── cache.py               # SQLite-based caching system
+│   ├── cli/                   # Organized CLI command structure
+│   │   ├── __init__.py        # Main CLI entry point
+│   │   ├── cli_utils.py       # Shared utility functions for CLI commands
+│   │   └── commands/          # Command implementations organized by concern
+│   │       ├── core.py        # Core rental listing commands (add, list, update-notes, share, clear, rescrape)
+│   │       ├── data_protection.py # Field protection commands (notes-status, protection-status, protect-fields, etc.)
+│   │       ├── cache_management.py # Cache management commands (cache-stats, cache-clear)
+│   │       └── setup.py       # Setup and help commands
+│   └── data_sources/          # Modular data source architecture
+│       ├── base.py            # Abstract base class for data sources
+│       ├── scraper_base.py    # Base class for web scrapers
+│       ├── api_base.py        # Base class for API-based sources
+│       ├── factory.py         # Data source factory
+│       ├── trulia.py          # Trulia scraper
+│       ├── zillow.py          # Zillow scraper
+│       ├── rent_com.py        # Rent.com scraper
+│       ├── apartments_com.py  # Apartments.com scraper
+│       ├── craigslist.py      # Craigslist scraper
+│       ├── redfin.py          # Redfin scraper
+│       └── hotpads.py         # HotPads scraper
+├── main.py                    # Entry point
+├── requirements.txt           # Dependencies
 └── README.md
-
 ```
+
+### CLI Architecture
+
+The CLI is organized with **separation of concerns** while maintaining a **flat command structure**:
+
+- **`cli_utils.py`**: Contains shared utility functions used across multiple commands
+- **`commands/core.py`**: Main rental listing management functionality
+- **`commands/data_protection.py`**: Field protection and notes preservation
+- **`commands/cache_management.py`**: Cache operations and statistics
+- **`commands/setup.py`**: Setup instructions and help system
 
 ### Adding New Features
 
 1. **New Data Fields**: Update `RentalListing` in `models.py`
 2. **New Data Sources**: Add new scrapers or APIs in `src/data_sources/`
-3. **New CLI Commands**: Add to `cli.py`
+3. **New CLI Commands**: Add to the appropriate command file in `src/cli/commands/`
+4. **New Utilities**: Add shared functions to `src/cli/cli_utils.py`
+
+### Code Organization Benefits
+
+- **Maintainability**: Each command file focuses on a specific area of functionality
+- **Reusability**: Common patterns are centralized in utility functions
+- **Consistency**: All commands use the same error handling and validation patterns
+- **Scalability**: Easy to add new commands without cluttering existing files
+- **Testing**: Individual command files can be tested separately
 
 See `src/data_sources/README.md` for detailed instructions on adding new data sources.
 
