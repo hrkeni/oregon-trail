@@ -6,6 +6,13 @@ from datetime import datetime
 from .models import RentalListing
 from .scraper import RentalScraper
 from .sheets import GoogleSheetsManager
+from .cli_utils import (
+    get_sheets_manager_and_worksheet, validate_url_input, validate_file_exists,
+    read_urls_from_file, find_listing_by_url, show_progress, show_summary,
+    print_table_headers, format_table_row, print_detailed_listing,
+    confirm_destructive_action, validate_field_names, get_field_value_by_name,
+    truncate_text
+)
 from pathlib import Path
 
 
@@ -25,24 +32,10 @@ def add(url: Optional[str], file: Optional[str], sheet_name: str, share_with: Op
     """Add rental listing(s) to the Google Sheet"""
     
     # Validate input
-    if not url and not file:
-        click.echo("❌ Error: Must provide either --url or --file")
-        return
-    
-    if url and file:
-        click.echo("❌ Error: Cannot provide both --url and --file")
-        return
+    validate_url_input(url, file)
     
     # Initialize components
-    try:
-        sheets_manager = GoogleSheetsManager()
-        worksheet = sheets_manager.create_or_get_sheet(sheet_name)
-        sheets_manager.setup_headers(worksheet)
-    except Exception as e:
-        click.echo(f"❌ Failed to initialize Google Sheets: {str(e)}")
-        click.echo("Make sure you have credentials.json in the project root")
-        return
-    
+    sheets_manager, worksheet = get_sheets_manager_and_worksheet(sheet_name)
     scraper = RentalScraper()
     
     if url:
@@ -65,7 +58,7 @@ def _process_single_url(url: str, scraper: RentalScraper, sheets_manager: Google
         return
     
     # Check if listing already exists
-    existing_row = sheets_manager.find_listing_row(listing.url, worksheet)
+    existing_row = find_listing_by_url(listing.url, sheets_manager, worksheet)
     is_update = existing_row is not None
     
     # Add or update listing in sheet
@@ -89,26 +82,18 @@ def _process_url_file(file_path: str, scraper: RentalScraper, sheets_manager: Go
                      worksheet, share_with: Optional[str], sheet_name: str, reset_hashes: bool):
     """Process a file containing URLs"""
     try:
-        file_path = Path(file_path)
-        if not file_path.exists():
-            click.echo(f"❌ Error: File not found: {file_path}")
-            return
+        # Validate and read file
+        path = validate_file_exists(file_path)
+        urls = read_urls_from_file(path)
         
-        with open(file_path, 'r') as f:
-            urls = [line.strip() for line in f if line.strip()]
-        
-        if not urls:
-            click.echo("❌ Error: No URLs found in file")
-            return
-        
-        click.echo(f"📄 Processing {len(urls)} URLs from {file_path}")
+        click.echo(f"📄 Processing {len(urls)} URLs from {path}")
         click.echo("-" * 50)
         
         successful = 0
         failed = 0
         
         for i, url in enumerate(urls, 1):
-            click.echo(f"[{i}/{len(urls)}] 🔍 Scraping: {url}")
+            show_progress(i, len(urls), f"🔍 Scraping: {url}")
             
             listing = scraper.scrape_listing(url)
             
@@ -118,7 +103,7 @@ def _process_url_file(file_path: str, scraper: RentalScraper, sheets_manager: Go
                 continue
             
             # Check if listing already exists
-            existing_row = sheets_manager.find_listing_row(listing.url, worksheet)
+            existing_row = find_listing_by_url(listing.url, sheets_manager, worksheet)
             is_update = existing_row is not None
             
             # Add or update listing in sheet
@@ -132,8 +117,7 @@ def _process_url_file(file_path: str, scraper: RentalScraper, sheets_manager: Go
                 click.echo(f"   ❌ Failed to add to sheet")
                 failed += 1
         
-        click.echo("-" * 50)
-        click.echo(f"📊 Summary: {successful} successful, {failed} failed")
+        show_summary(successful, failed, "scraping operations")
         
         # Share if requested (only once at the end)
         if share_with and successful > 0:
@@ -142,6 +126,8 @@ def _process_url_file(file_path: str, scraper: RentalScraper, sheets_manager: Go
             else:
                 click.echo(f"❌ Failed to share sheet with: {share_with}")
                 
+    except click.ClickException:
+        raise
     except Exception as e:
         click.echo(f"❌ Error processing file: {str(e)}")
 
@@ -153,8 +139,7 @@ def list(sheet_name: str, detailed: bool):
     """List all rental listings in the sheet"""
     
     try:
-        sheets_manager = GoogleSheetsManager()
-        worksheet = sheets_manager.create_or_get_sheet(sheet_name)
+        sheets_manager, worksheet = get_sheets_manager_and_worksheet(sheet_name)
         listings = sheets_manager.get_all_listings(worksheet)
         
         if not listings:
@@ -164,75 +149,25 @@ def list(sheet_name: str, detailed: bool):
         click.echo(f"📋 Found {len(listings)} listings:")
         click.echo("=" * 120)
         
-        # Create table headers
-        headers = [
-            "#", "Address", "Price", "Beds", "Baths", "Sqft", "Type", 
-            "Contact", "Appointment", "Available", "Parking", "Utilities"
-        ]
-        
-        # Calculate column widths
-        col_widths = [3, 35, 10, 5, 5, 8, 10, 15, 25, 12, 10, 10]
-        
-        # Print header
-        header_row = " | ".join(f"{h:<{w}}" for h, w in zip(headers, col_widths))
-        click.echo(header_row)
-        click.echo("-" * len(header_row))
-        
-        # Print data rows
-        for i, listing in enumerate(listings, 1):
-            # Truncate long fields
-            address = (listing.address[:32] + "...") if len(listing.address) > 35 else listing.address
-            contact = (listing.contact_info[:12] + "...") if listing.contact_info and len(listing.contact_info) > 15 else (listing.contact_info or "")
-            appointment = (listing.appointment_url[:22] + "...") if listing.appointment_url and len(listing.appointment_url) > 25 else (listing.appointment_url or "")
+        if not detailed:
+            # Print table view
+            col_widths = print_table_headers()
             
-            row = [
-                str(i),
-                address,
-                listing.price or "",
-                listing.beds or "",
-                listing.baths or "",
-                listing.sqft or "",
-                listing.house_type or "",
-                contact,
-                appointment,
-                listing.available_date or "",
-                listing.parking or "",
-                listing.utilities or ""
-            ]
+            # Print data rows
+            for i, listing in enumerate(listings, 1):
+                row_data = format_table_row(listing, i)
+                formatted_row = " | ".join(f"{cell:<{w}}" for cell, w in zip(row_data, col_widths))
+                click.echo(formatted_row)
             
-            # Format row with proper column widths
-            formatted_row = " | ".join(f"{cell:<{w}}" for cell, w in zip(row, col_widths))
-            click.echo(formatted_row)
-        
-        click.echo("=" * len(header_row))
-        
-        if detailed:
+            click.echo("=" * 120)
+            click.echo(f"💡 Use 'python main.py list --detailed' for full details including descriptions and amenities")
+        else:
+            # Print detailed view
             click.echo("\n📋 DETAILED VIEW:")
             click.echo("=" * 80)
             
             for i, listing in enumerate(listings, 1):
-                click.echo(f"{i}. {listing.address}")
-                click.echo(f"   Price: {listing.price or 'N/A'}")
-                click.echo(f"   Beds/Baths: {listing.beds or 'N/A'}/{listing.baths or 'N/A'}")
-                click.echo(f"   Sqft: {listing.sqft or 'N/A'}")
-                click.echo(f"   House Type: {listing.house_type or 'N/A'}")
-                click.echo(f"   Available: {listing.available_date or 'N/A'}")
-                click.echo(f"   Parking: {listing.parking or 'N/A'}")
-                click.echo(f"   Utilities: {listing.utilities or 'N/A'}")
-                if listing.contact_info:
-                    click.echo(f"   Contact: {listing.contact_info}")
-                if listing.appointment_url:
-                    click.echo(f"   Appointment: {listing.appointment_url}")
-                if listing.description:
-                    click.echo(f"   Description: {listing.description[:200]}{'...' if len(listing.description) > 200 else ''}")
-                if listing.amenities:
-                    click.echo(f"   Amenities: {', '.join(listing.amenities)}")
-                click.echo(f"   URL: {listing.url}")
-                if listing.notes:
-                    click.echo(f"   Notes: {listing.notes}")
-                click.echo()
-        else:
-            click.echo(f"💡 Use 'python main.py list --detailed' for full details including descriptions and amenities")
+                print_detailed_listing(listing, i)
     
     except Exception as e:
         click.echo(f"❌ Error: {str(e)}")
@@ -246,8 +181,7 @@ def update_notes(url: str, notes: str, sheet_name: str):
     """Update notes for a specific listing"""
     
     try:
-        sheets_manager = GoogleSheetsManager()
-        worksheet = sheets_manager.create_or_get_sheet(sheet_name)
+        sheets_manager, worksheet = get_sheets_manager_and_worksheet(sheet_name)
         
         if sheets_manager.update_listing_notes(url, notes, worksheet):
             click.echo(f"✅ Updated notes for listing: {url}")
@@ -265,7 +199,7 @@ def share(email: str, sheet_name: str):
     """Share the Google Sheet with someone"""
     
     try:
-        sheets_manager = GoogleSheetsManager()
+        sheets_manager, _ = get_sheets_manager_and_worksheet(sheet_name)
         
         if sheets_manager.share_sheet(email, sheet_name):
             click.echo(f"✅ Shared sheet with: {email}")
@@ -283,8 +217,7 @@ def clear(sheet_name: str, force: bool):
     """Clear all rental listings from the sheet"""
     
     try:
-        sheets_manager = GoogleSheetsManager()
-        worksheet = sheets_manager.create_or_get_sheet(sheet_name)
+        sheets_manager, worksheet = get_sheets_manager_and_worksheet(sheet_name)
         
         # Get current listings count
         all_values = worksheet.get_all_values()
@@ -296,10 +229,7 @@ def clear(sheet_name: str, force: bool):
         
         # Show confirmation prompt unless --force is used
         if not force:
-            click.echo(f"⚠️  This will permanently delete {listing_count} listing(s) from the sheet.")
-            click.echo("This action cannot be undone!")
-            
-            if not click.confirm("Are you sure you want to continue?"):
+            if not confirm_destructive_action(f"This will permanently delete {listing_count} listing(s) from the sheet.", force):
                 click.echo("❌ Operation cancelled")
                 return
         
@@ -319,8 +249,7 @@ def clear(sheet_name: str, force: bool):
 def reset_hashes(url: str, sheet_name: str):
     """Reset field hashes for a specific listing to allow overwriting manually modified fields"""
     try:
-        sheets_manager = GoogleSheetsManager()
-        worksheet = sheets_manager.create_or_get_sheet(sheet_name)
+        sheets_manager, worksheet = get_sheets_manager_and_worksheet(sheet_name)
         
         # Clear hashes for the URL
         sheets_manager.cache.clear_field_hashes(url)
@@ -338,8 +267,7 @@ def reset_hashes(url: str, sheet_name: str):
 def rescrape(sheet_name: str, ignore_hashes: bool, force: bool):
     """Rescrape all URLs from the sheet with smart notes protection"""
     try:
-        sheets_manager = GoogleSheetsManager()
-        worksheet = sheets_manager.create_or_get_sheet(sheet_name)
+        sheets_manager, worksheet = get_sheets_manager_and_worksheet(sheet_name)
         scraper = RentalScraper()
         
         # Get all listings from the sheet
@@ -351,6 +279,7 @@ def rescrape(sheet_name: str, ignore_hashes: bool, force: bool):
         
         click.echo(f"📋 Found {len(listings)} listings to rescrape")
         
+        # Show confirmation prompt unless --force is used
         if not force:
             if ignore_hashes:
                 click.echo("⚠️  WARNING: Using --ignore-hashes will overwrite ALL fields!")
@@ -373,8 +302,7 @@ def rescrape(sheet_name: str, ignore_hashes: bool, force: bool):
         # Use the sheets manager to handle the rescraping logic
         results = sheets_manager.rescrape_all_listings(worksheet, scraper, ignore_hashes)
         
-        click.echo("-" * 50)
-        click.echo(f"📊 Summary: {results['successful']} successful, {results['failed']} failed")
+        show_summary(results['successful'], results['failed'], "rescraping operations")
         
     except Exception as e:
         click.echo(f"❌ Error: {str(e)}")
@@ -441,8 +369,7 @@ def setup():
 def notes_status(sheet_name: str):
     """Show which listings have notes that will be preserved during rescraping"""
     try:
-        sheets_manager = GoogleSheetsManager()
-        worksheet = sheets_manager.create_or_get_sheet(sheet_name)
+        sheets_manager, worksheet = get_sheets_manager_and_worksheet(sheet_name)
         listings = sheets_manager.get_all_listings(worksheet)
         
         if not listings:
@@ -482,8 +409,7 @@ def notes_status(sheet_name: str):
 def protection_status(sheet_name: str):
     """Show which fields are protected from overwriting for each listing"""
     try:
-        sheets_manager = GoogleSheetsManager()
-        worksheet = sheets_manager.create_or_get_sheet(sheet_name)
+        sheets_manager, worksheet = get_sheets_manager_and_worksheet(sheet_name)
         listings = sheets_manager.get_all_listings(worksheet)
         
         if not listings:
@@ -528,11 +454,10 @@ def protection_status(sheet_name: str):
 def protect_fields(url: str, fields: str, sheet_name: str):
     """Manually protect specific fields for a listing from being overwritten during rescraping"""
     try:
-        sheets_manager = GoogleSheetsManager()
-        worksheet = sheets_manager.create_or_get_sheet(sheet_name)
+        sheets_manager, worksheet = get_sheets_manager_and_worksheet(sheet_name)
         
         # Find the listing
-        existing_row = sheets_manager.find_listing_row(url, worksheet)
+        existing_row = find_listing_by_url(url, sheets_manager, worksheet)
         if not existing_row:
             click.echo(f"❌ Listing not found: {url}")
             return
@@ -541,36 +466,17 @@ def protect_fields(url: str, fields: str, sheet_name: str):
         all_values = worksheet.get_all_values()
         existing_data = all_values[existing_row - 1]  # Convert to 0-based index
         
-        # Parse field names
-        field_names = [
-            'url', 'address', 'price', 'beds', 'baths', 'sqft', 'house_type',
-            'description', 'amenities', 'available_date', 'parking', 'utilities',
-            'contact_info', 'appointment_url', 'scraped_at', 'notes'
-        ]
-        
-        fields_to_protect = [f.strip().lower() for f in fields.split(',')]
-        valid_fields = []
-        
-        for field in fields_to_protect:
-            if field in field_names:
-                valid_fields.append(field)
-            else:
-                click.echo(f"⚠️  Warning: '{field}' is not a valid field name")
-        
-        if not valid_fields:
-            click.echo("❌ No valid fields to protect")
-            return
+        # Validate field names
+        valid_fields = validate_field_names(fields)
         
         # Protect the specified fields by setting their hashes
         for field in valid_fields:
-            field_index = field_names.index(field)
-            if field_index < len(existing_data):
-                field_value = existing_data[field_index]
-                if field_value:  # Only protect non-empty fields
-                    sheets_manager.cache.set_field_hash(url, field, field_value)
-                    click.echo(f"✅ Protected field '{field}': '{field_value[:50]}{'...' if len(field_value) > 50 else ''}'")
-                else:
-                    click.echo(f"⚠️  Field '{field}' is empty, skipping protection")
+            field_value = get_field_value_by_name(field, existing_data)
+            if field_value:  # Only protect non-empty fields
+                sheets_manager.cache.set_field_hash(url, field, field_value)
+                click.echo(f"✅ Protected field '{field}': '{truncate_text(field_value, 50)}'")
+            else:
+                click.echo(f"⚠️  Field '{field}' is empty, skipping protection")
         
         click.echo(f"🛡️  Protected {len(valid_fields)} field(s) for listing: {url}")
         click.echo("💡 These fields will now be preserved during rescraping")
@@ -586,34 +492,16 @@ def protect_fields(url: str, fields: str, sheet_name: str):
 def unprotect_fields(url: str, fields: str, sheet_name: str):
     """Remove protection from specific fields for a listing, allowing them to be updated during rescraping"""
     try:
-        sheets_manager = GoogleSheetsManager()
-        worksheet = sheets_manager.create_or_get_sheet(sheet_name)
+        sheets_manager, worksheet = get_sheets_manager_and_worksheet(sheet_name)
         
         # Find the listing
-        existing_row = sheets_manager.find_listing_row(url, worksheet)
+        existing_row = find_listing_by_url(url, sheets_manager, worksheet)
         if not existing_row:
             click.echo(f"❌ Listing not found: {url}")
             return
         
-        # Parse field names
-        field_names = [
-            'url', 'address', 'price', 'beds', 'baths', 'sqft', 'house_type',
-            'description', 'amenities', 'available_date', 'parking', 'utilities',
-            'contact_info', 'appointment_url', 'scraped_at', 'notes'
-        ]
-        
-        fields_to_unprotect = [f.strip().lower() for f in fields.split(',')]
-        valid_fields = []
-        
-        for field in fields_to_unprotect:
-            if field in field_names:
-                valid_fields.append(field)
-            else:
-                click.echo(f"⚠️  Warning: '{field}' is not a valid field name")
-        
-        if not valid_fields:
-            click.echo("❌ No valid fields to unprotect")
-            return
+        # Validate field names
+        valid_fields = validate_field_names(fields)
         
         # Check which fields are currently protected
         stored_hashes = sheets_manager.cache.get_all_field_hashes(url)
