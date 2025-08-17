@@ -460,6 +460,18 @@ def rescrape(sheet_name: str, ignore_hashes: bool, force: bool):
         
         click.echo(f"📋 Found {len(listings)} listings to rescrape")
         
+        # Show URLs that will be processed
+        urls_from_sheet = sheets_manager.get_all_urls_from_sheet(worksheet)
+        if urls_from_sheet:
+            click.echo(f"🔗 URLs found in sheet: {len(urls_from_sheet)}")
+            if len(urls_from_sheet) <= 10:  # Show all if 10 or fewer
+                for url in urls_from_sheet:
+                    click.echo(f"   • {url}")
+            else:  # Show first few and count
+                for url in urls_from_sheet[:5]:
+                    click.echo(f"   • {url}")
+                click.echo(f"   ... and {len(urls_from_sheet) - 5} more")
+        
         # Show confirmation prompt unless --force is used
         if not force:
             if ignore_hashes:
@@ -476,12 +488,30 @@ def rescrape(sheet_name: str, ignore_hashes: bool, force: bool):
         
         # Check how many listings have notes that will be preserved
         if not ignore_hashes:
-            listings_with_notes = sum(1 for listing in listings if sheets_manager.has_notes(listing.url))
+            # Count listings with notes by reading from the sheet directly
+            all_values = worksheet.get_all_values()
+            listings_with_notes = 0
+            for row in all_values[1:]:  # Skip headers
+                if len(row) > 15 and row[15] and row[15].strip():  # Column P (notes)
+                    listings_with_notes += 1
+            
             if listings_with_notes > 0:
                 click.echo(f"📝 {listings_with_notes} listing(s) have notes that will be preserved")
         
         # Use the sheets manager to handle the rescraping logic
         results = sheets_manager.rescrape_all_listings(worksheet, scraper, ignore_hashes)
+        
+        # Display comprehensive results
+        click.echo(f"\n📊 Rescraping Results:")
+        click.echo(f"   • Total URLs processed: {results['total']}")
+        click.echo(f"   • Successfully updated: {results['successful']}")
+        click.echo(f"   • Failed to update: {results['failed']}")
+        click.echo(f"   • Scraped successfully: {results['scraped_successfully']}")
+        click.echo(f"   • Scraping failed: {results['scraped_failed']}")
+        
+        if results['scraped_failed'] > 0:
+            click.echo(f"\n⚠️  Note: {results['scraped_failed']} URL(s) could not be scraped but were preserved with existing data")
+            click.echo("   This can happen with manually added URLs or unsupported rental sites")
         
         show_summary(results['successful'], results['failed'], "rescraping operations")
         

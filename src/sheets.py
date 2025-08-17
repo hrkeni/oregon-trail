@@ -1,9 +1,10 @@
 import gspread
 from google.oauth2.service_account import Credentials
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import logging
 from datetime import datetime
 import hashlib
+import time
 
 from .models import RentalListing
 from .cache import WebPageCache
@@ -238,17 +239,43 @@ class GoogleSheetsManager:
             logger.error(f"Failed to find listing row: {str(e)}")
             return None
     
-    def add_or_update_listing(self, listing: RentalListing, worksheet: gspread.Worksheet, reset_hashes: bool = False) -> bool:
+    def add_or_update_listing(self, listing: RentalListing, worksheet: gspread.Worksheet, reset_hashes: bool = False, existing_row_data: dict = None) -> bool:
         """Add a rental listing to the worksheet or update if URL already exists"""
         try:
             # Check if listing already exists
-            existing_row = self.find_listing_row(listing.url, worksheet)
+            existing_row = None
+            existing_data = None
+            
+            if existing_row_data:
+                # Use pre-loaded data to avoid API calls
+                existing_row = existing_row_data['row_num']
+                existing_data = [
+                    listing.url,  # URL
+                    existing_row_data['address'],  # Address
+                    None,  # Price (will be filled from new listing)
+                    None,  # Beds
+                    None,  # Baths
+                    None,  # Sqft
+                    None,  # House type
+                    None,  # Description
+                    None,  # Amenities
+                    None,  # Available date
+                    None,  # Parking
+                    None,  # Utilities
+                    None,  # Contact info
+                    None,  # Appointment URL
+                    None,  # Scraped at
+                    existing_row_data['notes'],  # Notes
+                    existing_row_data['decision']  # Decision
+                ]
+            else:
+                # Fallback to API call if no pre-loaded data
+                existing_row = self.find_listing_row(listing.url, worksheet)
+                if existing_row:
+                    all_values = worksheet.get_all_values()
+                    existing_data = all_values[existing_row - 1]  # Convert to 0-based index
             
             if existing_row:
-                # Get existing data to preserve manually modified fields
-                all_values = worksheet.get_all_values()
-                existing_data = all_values[existing_row - 1]  # Convert to 0-based index
-                
                 # Detect which fields have been manually modified using local database
                 if reset_hashes:
                     # Clear all hashes for this URL to force update all fields
@@ -270,12 +297,6 @@ class GoogleSheetsManager:
                 row_data = self._validate_row_data_for_dropdown(row_data, field_names)
                 
                 # Preserve manually modified fields
-                field_names = [
-                    'url', 'address', 'price', 'beds', 'baths', 'sqft', 'house_type',
-                    'description', 'amenities', 'available_date', 'parking', 'utilities',
-                    'contact_info', 'appointment_url', 'scraped_at', 'notes', 'decision'
-                ]
-                
                 for i, (is_manual, field_name) in enumerate(zip(manual_changes, field_names)):
                     if is_manual and i < len(existing_data):
                         row_data[i] = existing_data[i]
@@ -312,8 +333,14 @@ class GoogleSheetsManager:
                 return True
             else:
                 # Add new row
-                all_values = worksheet.get_all_values()
-                next_row = len(all_values) + 1
+                if not existing_row_data:
+                    # Only make API call if we don't have pre-loaded data
+                    all_values = worksheet.get_all_values()
+                    next_row = len(all_values) + 1
+                else:
+                    # Use pre-loaded data
+                    next_row = existing_row_data['row_num']
+                
                 row_data = listing.to_sheet_row()
                 
                 # Validate row data for dropdown compatibility
@@ -325,11 +352,6 @@ class GoogleSheetsManager:
                 row_data = self._validate_row_data_for_dropdown(row_data, field_names)
                 
                 # Store hashes in local database
-                field_names = [
-                    'url', 'address', 'price', 'beds', 'baths', 'sqft', 'house_type',
-                    'description', 'amenities', 'available_date', 'parking', 'utilities',
-                    'contact_info', 'appointment_url', 'scraped_at', 'notes', 'decision'
-                ]
                 new_hashes = listing.to_hash_row()
                 for i, (field_name, new_hash) in enumerate(zip(field_names, new_hashes)):
                     if new_hash:  # Only store non-empty hashes
@@ -505,40 +527,82 @@ class GoogleSheetsManager:
     def rescrape_all_listings(self, worksheet: gspread.Worksheet, scraper, ignore_hashes: bool = False) -> dict:
         """Rescrape all listings from the sheet and return results summary"""
         try:
-            # Get all listings from the sheet
-            listings = self.get_all_listings(worksheet)
+            # Read sheet data ONCE to avoid redundant API calls
+            logger.info("Reading sheet data...")
+            all_values = worksheet.get_all_values()
             
-            if not listings:
-                return {"successful": 0, "failed": 0, "total": 0}
+            if len(all_values) <= 1:  # Only headers
+                return {"successful": 0, "failed": 0, "total": 0, "scraped_successfully": 0, "scraped_failed": 0}
+            
+            # Extract URLs and create a mapping of URL to row data
+            url_to_row_data = {}
+            urls = []
+            
+            for i, row in enumerate(all_values[1:], start=2):  # Skip headers, start from row 2
+                if row[0] and row[0].strip():  # Has URL
+                    url = row[0].strip()
+                    urls.append(url)
+                    url_to_row_data[url] = {
+                        'row_num': i,
+                        'address': row[1] if len(row) > 1 else None,
+                        'notes': row[15] if len(row) > 15 else None,
+                        'decision': row[16] if len(row) > 16 else "Pending Review"
+                    }
+            
+            if not urls:
+                return {"successful": 0, "failed": 0, "total": 0, "scraped_successfully": 0, "scraped_failed": 0}
+            
+            logger.info(f"Found {len(urls)} URLs to process")
             
             successful = 0
             failed = 0
+            scraped_successfully = 0
+            scraped_failed = 0
             
-            for listing in listings:
-                # Check if this listing has notes before rescraping
-                has_notes_before = self.has_notes(listing.url)
-                notes_content_before = listing.notes
-                
-                # Check if this listing has a decision before rescraping
-                has_decision_before = self.has_decision(listing.url)
-                decision_content_before = listing.decision
+            # Process each URL
+            for url in urls:
+                row_data = url_to_row_data[url]
+                existing_notes = row_data['notes']
+                existing_decision = row_data['decision']
+                existing_address = row_data['address']
                 
                 # Rescrape the listing
-                new_listing = scraper.scrape_listing(listing.url)
+                new_listing = scraper.scrape_listing(url)
                 
                 if not new_listing:
-                    failed += 1
-                    continue
-                
-                # Special handling for notes: if the listing had notes before, preserve them
-                if has_notes_before and notes_content_before:
-                    new_listing.notes = notes_content_before
-                    logger.info(f"Preserved existing notes for {listing.url}: '{notes_content_before[:100]}{'...' if len(notes_content_before) > 100 else ''}'")
-                
-                # Special handling for decision: if the listing had a decision before, preserve it
-                if has_decision_before and decision_content_before and decision_content_before != "Pending Review":
-                    new_listing.decision = decision_content_before
-                    logger.info(f"Preserved existing decision for {listing.url}: '{decision_content_before}'")
+                    # Create a minimal listing object for failed scrapes to preserve existing data
+                    logger.warning(f"Failed to rescrape listing: {url} - preserving existing data")
+                    new_listing = RentalListing(
+                        url=url,
+                        address=existing_address or "Scraping Failed",
+                        price=None,
+                        beds=None,
+                        baths=None,
+                        sqft=None,
+                        house_type=None,
+                        description="Data unavailable - scraping failed",
+                        amenities=None,
+                        available_date=None,
+                        parking=None,
+                        utilities=None,
+                        contact_info=None,
+                        appointment_url=None,
+                        scraped_at=datetime.now(),
+                        notes=existing_notes,
+                        decision=existing_decision or "Pending Review"
+                    )
+                    scraped_failed += 1
+                else:
+                    scraped_successfully += 1
+                    # Special handling for notes: preserve existing notes from the sheet
+                    if existing_notes and existing_notes.strip():
+                        new_listing.notes = existing_notes
+                        logger.info(f"Preserved existing notes for {url}: '{existing_notes[:100]}{'...' if len(existing_notes) > 100 else ''}'")
+                    
+                    # Special handling for decision: preserve existing decision from the sheet
+                    if existing_decision and existing_decision.strip() and existing_decision != "Pending Review":
+                        new_listing.decision = existing_decision
+                        logger.info(f"Preserved existing decision for {url}: '{existing_decision}'")
                 
                 # Validate the new listing for dropdown compatibility
                 new_listing = self._validate_listing_for_dropdown(new_listing)
@@ -546,23 +610,31 @@ class GoogleSheetsManager:
                 # Update the listing with appropriate hash handling
                 if ignore_hashes:
                     # Clear hashes to force update all fields
-                    self.cache.clear_field_hashes(listing.url)
+                    self.cache.clear_field_hashes(url)
                     reset_hashes = True
-                    logger.info(f"Force updating all fields for {listing.url} (ignore_hashes=True)")
+                    logger.info(f"Force updating all fields for {url} (ignore_hashes=True)")
                 else:
                     # Honor existing hashing rules
                     reset_hashes = False
                 
-                if self.add_or_update_listing(new_listing, worksheet, reset_hashes=reset_hashes):
+                if self.add_or_update_listing(new_listing, worksheet, reset_hashes=reset_hashes, existing_row_data=row_data):
                     successful += 1
+                    logger.info(f"Successfully updated listing: {url}")
                 else:
                     failed += 1
+                    logger.error(f"Failed to update listing: {url}")
+                
+                # Small delay to avoid rate limiting (only if not the last URL)
+                if url != urls[-1]:
+                    time.sleep(0.1)  # 100ms delay between calls
             
-            return {"successful": successful, "failed": failed, "total": len(listings)}
+            logger.info(f"Rescraping completed: {successful} successful updates, {failed} failed updates")
+            logger.info(f"Scraping results: {scraped_successfully} scraped successfully, {scraped_failed} scraping failed")
+            return {"successful": successful, "failed": failed, "total": len(urls), "scraped_successfully": scraped_successfully, "scraped_failed": scraped_failed}
             
         except Exception as e:
             logger.error(f"Failed to rescrape listings: {str(e)}")
-            return {"successful": 0, "failed": 0, "total": 0} 
+            return {"successful": 0, "failed": 0, "total": 0, "scraped_successfully": 0, "scraped_failed": 0} 
     
     def sort_listings_by_decision(self, worksheet: gspread.Worksheet, sorted_listings: List[RentalListing]) -> bool:
         """Sort listings by decision status in the worksheet"""
@@ -660,6 +732,24 @@ class GoogleSheetsManager:
             pass
         
         return validated_data 
+    
+    def get_all_urls_from_sheet(self, worksheet: gspread.Worksheet) -> List[str]:
+        """Get all URLs from the sheet for visibility and debugging"""
+        try:
+            all_values = worksheet.get_all_values()
+            if len(all_values) <= 1:  # Only headers
+                return []
+            
+            urls = []
+            for row in all_values[1:]:  # Skip headers
+                if row[0] and row[0].strip():  # Has URL
+                    urls.append(row[0].strip())
+            
+            return urls
+            
+        except Exception as e:
+            logger.error(f"Failed to get URLs from sheet: {str(e)}")
+            return []
     
     def cleanup_invalid_decisions(self, worksheet: gspread.Worksheet) -> dict:
         """Clean up invalid decision values in the sheet to ensure dropdown compatibility"""

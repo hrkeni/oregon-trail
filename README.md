@@ -87,7 +87,13 @@ python main.py rescrape --ignore-hashes
 python main.py rescrape --force
 ```
 
-**Note**: Re-running the same URL will update the existing listing instead of creating a duplicate.
+**Note**: The rescrape command now processes ALL URLs found in the sheet, including:
+
+- Previously scraped listings
+- Manually added listings
+- Listings from any source
+
+This ensures that even manually added URLs get updated with fresh data while preserving your notes and decisions.
 
 **Manual Edit Protection**: The system automatically detects and preserves fields that you manually edit in Google Sheets. When you re-scrape a listing, only fields that haven't been manually modified will be updated.
 
@@ -276,6 +282,47 @@ The decision column now enforces dropdown validation to ensure data consistency:
 - **Reliable Sorting**: The `sort-by-status` command works with clean, valid data
 - **User Experience**: Clear dropdown options prevent confusion and typos
 - **Professional Quality**: Consistent data format for sharing and collaboration
+
+## Enhanced Rescrape Functionality
+
+The rescrape command now provides comprehensive coverage and better visibility:
+
+### **Complete URL Coverage**
+
+- **All URLs Processed**: Rescrapes every URL found in the sheet
+- **Manual Listings Included**: Handles manually added listings automatically
+- **Source Agnostic**: Works with listings from any rental site
+- **No URL Left Behind**: Ensures all data stays fresh and current
+
+### **Improved Visibility**
+
+- **URL Count Display**: Shows exactly how many URLs are found
+- **Progress Tracking**: Displays which listings are being processed
+- **Notes Preservation Count**: Shows how many listings have notes that will be preserved
+- **Detailed Logging**: Comprehensive feedback during the rescraping process
+
+### **Smart Data Preservation**
+
+- **Sheet-Based Preservation**: Reads notes and decisions directly from the sheet
+- **Cache-Independent**: Works even for listings without cache entries
+- **Manual Edit Protection**: Preserves all your manual edits during rescraping
+- **Dropdown Compatibility**: Ensures all decision values remain valid
+
+### **Usage Examples**
+
+```bash
+# Rescrape all URLs while preserving manual edits
+python main.py rescrape
+
+# Force update all fields (ignore manual edits)
+python main.py rescrape --ignore-hashes
+
+# Skip confirmation prompts
+python main.py rescrape --force
+
+# Use a different sheet
+python main.py rescrape --sheet-name "My Rentals"
+```
 
 ## Legal & Ethical Considerations
 
