@@ -155,7 +155,7 @@ class GoogleSheetsManager:
             raise
     
     def setup_headers(self, worksheet: gspread.Worksheet):
-        """Set up headers in the worksheet"""
+        """Set up headers in the worksheet with proper table structure"""
         try:
             # Check if headers already exist
             existing_headers = worksheet.row_values(1)
@@ -163,15 +163,33 @@ class GoogleSheetsManager:
                 logger.info("Headers already exist in worksheet")
                 # Still set up data validation for existing sheets
                 self._setup_decision_validation(worksheet)
+                # Ensure table structure is maintained
+                self._maintain_table_structure(worksheet)
                 return
             
             headers = RentalListing.get_sheet_headers()
+            
+            # Ensure we have exactly 17 columns for proper table structure
+            if len(headers) < 17:
+                # Pad with empty headers if needed
+                headers.extend([''] * (17 - len(headers)))
+            elif len(headers) > 17:
+                # Truncate if too many
+                headers = headers[:17]
+            
+            # Update headers with proper formatting
             worksheet.update('A1:Q1', [headers])
+            
+            # Format headers to look like a proper table
+            self._format_headers(worksheet)
             
             # Set up data validation for the decision column
             self._setup_decision_validation(worksheet)
             
-            logger.info("Set up headers and data validation in worksheet")
+            # Set up table structure
+            self._maintain_table_structure(worksheet)
+            
+            logger.info("Set up headers and data validation in worksheet with proper table structure")
         except Exception as e:
             logger.error(f"Failed to setup headers: {str(e)}")
             raise
@@ -222,6 +240,103 @@ class GoogleSheetsManager:
             
         except Exception as e:
             logger.error(f"Failed to setup decision validation: {str(e)}")
+            # Don't raise here as this is not critical for basic functionality
+    
+    def _format_headers(self, worksheet: gspread.Worksheet):
+        """Format headers to look like a proper table"""
+        try:
+            # Format header row with bold text and background color
+            worksheet.format('A1:Q1', {
+                'textFormat': {'bold': True},
+                'backgroundColor': {'red': 0.9, 'green': 0.9, 'blue': 0.9},
+                'horizontalAlignment': 'CENTER',
+                'verticalAlignment': 'MIDDLE'
+            })
+            
+            # Freeze the header row
+            worksheet.freeze(rows=1)
+            
+            # Auto-resize columns to fit content
+            worksheet.columns_auto_resize(0, 16)  # Columns A to Q
+            
+            logger.info("Formatted headers for proper table appearance")
+        except Exception as e:
+            logger.error(f"Failed to format headers: {str(e)}")
+            # Don't raise here as this is not critical for basic functionality
+    
+    def _maintain_table_structure(self, worksheet: gspread.Worksheet):
+        """Ensure table structure is maintained with consistent column count"""
+        try:
+            # Get current data to check structure
+            all_values = worksheet.get_all_values()
+            
+            if len(all_values) <= 1:  # Only headers or empty
+                return
+            
+            # Ensure all data rows have exactly 17 columns
+            for i, row in enumerate(all_values[1:], start=2):  # Skip headers
+                if len(row) < 17:
+                    # Pad row with empty values to maintain 17 columns
+                    padded_row = row + [''] * (17 - len(row))
+                    worksheet.update(f'A{i}:Q{i}', [padded_row])
+                    logger.debug(f"Padded row {i} to maintain 17 columns")
+                elif len(row) > 17:
+                    # Truncate row to 17 columns
+                    truncated_row = row[:17]
+                    worksheet.update(f'A{i}:Q{i}', [truncated_row])
+                    logger.debug(f"Truncated row {i} to maintain 17 columns")
+            
+            logger.info("Maintained consistent table structure with 17 columns")
+        except Exception as e:
+            logger.error(f"Failed to maintain table structure: {str(e)}")
+            # Don't raise here as this is not critical for basic functionality
+    
+    def _ensure_data_consistency(self, worksheet: gspread.Worksheet):
+        """Ensure data consistency across all rows for proper table behavior"""
+        try:
+            all_values = worksheet.get_all_values()
+            if len(all_values) <= 1:  # Only headers or empty
+                return
+            
+            # Ensure all rows have consistent data types and structure
+            for i, row in enumerate(all_values[1:], start=2):  # Skip headers
+                if len(row) < 17:
+                    # Pad with empty values
+                    padded_row = row + [''] * (17 - len(row))
+                    worksheet.update(f'A{i}:Q{i}', [padded_row])
+                elif len(row) > 17:
+                    # Truncate to 17 columns
+                    truncated_row = row[:17]
+                    worksheet.update(f'A{i}:Q{i}', [truncated_row])
+                
+                # Ensure specific columns have consistent data types
+                if len(row) > 2 and row[2]:  # Price column
+                    # Ensure price is numeric or empty
+                    try:
+                        float(str(row[2]).replace('$', '').replace(',', ''))
+                    except ValueError:
+                        # If not numeric, clear the value
+                        worksheet.update(f'C{i}', '')
+                
+                if len(row) > 3 and row[3]:  # Beds column
+                    # Ensure beds is numeric or empty
+                    try:
+                        int(str(row[3]))
+                    except ValueError:
+                        # If not numeric, clear the value
+                        worksheet.update(f'D{i}', '')
+                
+                if len(row) > 4 and row[4]:  # Baths column
+                    # Ensure baths is numeric or empty
+                    try:
+                        float(str(row[4]))
+                    except ValueError:
+                        # If not numeric, clear the value
+                        worksheet.update(f'E{i}', '')
+            
+            logger.info("Ensured data consistency across all rows")
+        except Exception as e:
+            logger.error(f"Failed to ensure data consistency: {str(e)}")
             # Don't raise here as this is not critical for basic functionality
     
     def find_listing_row(self, url: str, worksheet: gspread.Worksheet) -> Optional[int]:
@@ -288,6 +403,12 @@ class GoogleSheetsManager:
                 # Convert listing to row data
                 row_data = listing.to_sheet_row()
                 
+                # Ensure row_data has exactly 17 columns for table structure
+                if len(row_data) < 17:
+                    row_data.extend([''] * (17 - len(row_data)))
+                elif len(row_data) > 17:
+                    row_data = row_data[:17]
+                
                 # Validate row data for dropdown compatibility
                 field_names = [
                     'url', 'address', 'price', 'beds', 'baths', 'sqft', 'house_type',
@@ -342,6 +463,12 @@ class GoogleSheetsManager:
                     next_row = existing_row_data['row_num']
                 
                 row_data = listing.to_sheet_row()
+                
+                # Ensure row_data has exactly 17 columns for table structure
+                if len(row_data) < 17:
+                    row_data.extend([''] * (17 - len(row_data)))
+                elif len(row_data) > 17:
+                    row_data = row_data[:17]
                 
                 # Validate row data for dropdown compatibility
                 field_names = [
@@ -497,6 +624,9 @@ class GoogleSheetsManager:
                 for row_num in range(len(all_values), 1, -1):
                     worksheet.delete_rows(row_num)
                 
+                # Ensure table structure is maintained after clearing
+                self._maintain_table_structure(worksheet)
+                
                 logger.info(f"Cleared {len(all_values) - 1} listings from worksheet")
                 return True
             
@@ -630,6 +760,11 @@ class GoogleSheetsManager:
             
             logger.info(f"Rescraping completed: {successful} successful updates, {failed} failed updates")
             logger.info(f"Scraping results: {scraped_successfully} scraped successfully, {scraped_failed} scraping failed")
+            
+            # Ensure table structure is maintained after rescraping
+            self._maintain_table_structure(worksheet)
+            self._ensure_data_consistency(worksheet)
+            
             return {"successful": successful, "failed": failed, "total": len(urls), "scraped_successfully": scraped_successfully, "scraped_failed": scraped_failed}
             
         except Exception as e:
@@ -658,6 +793,13 @@ class GoogleSheetsManager:
                 validated_listing = self._validate_listing_for_dropdown(listing)
                 
                 row_data = validated_listing.to_sheet_row()
+                
+                # Ensure row_data has exactly 17 columns for table structure
+                if len(row_data) < 17:
+                    row_data.extend([''] * (17 - len(row_data)))
+                elif len(row_data) > 17:
+                    row_data = row_data[:17]
+                
                 worksheet.update(f'A{i}:Q{i}', [row_data])
                 
                 # Store hashes for the sorted listing to maintain protection
@@ -670,6 +812,9 @@ class GoogleSheetsManager:
                 for j, (field_name, new_hash) in enumerate(zip(field_names, new_hashes)):
                     if new_hash:  # Only store non-empty hashes
                         self.cache.set_field_hash(validated_listing.url, field_name, new_hash)
+            
+            # Ensure table structure is maintained after sorting
+            self._maintain_table_structure(worksheet)
             
             logger.info(f"Successfully sorted {len(sorted_listings)} listings by decision status")
             return True
